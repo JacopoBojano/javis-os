@@ -6,7 +6,9 @@ Lịch sử phiên bản Javis OS. Bản mới nhất ở trên cùng. Xem ngay 
 
 ## [0.64.67] - 2026-09-27
 ### Cải thiện
-- Nghe câu Việt xen Anh đúng hơn (đang soạn).
+- **Đọc từ tiếng Anh cho ra tiếng Anh:** trong câu Việt xen Anh, những từ như GitHub Actions, deploy, dashboard nay được đọc bằng giọng tiếng Anh, phần tiếng Việt vẫn giọng Việt. Áp dụng cho giọng Edge Hoài My, Nam Minh và các giọng đa ngôn ngữ.
+- Chọn **Hoài My** là nghe tự nhiên nhất: tiếng Việt chuẩn, từ tiếng Anh do Emma đọc. Chọn Emma hay giọng đa ngôn ngữ khác thì phần tiếng Việt trong câu trộn vẫn giao cho giọng Việt, vì chúng đọc mẩu tiếng Việt ngắn bị sai.
+- **Nghe câu Việt xen Anh đúng hơn:** Groq Whisper chuyển sang bản đầy đủ và được mồi sẵn các từ tiếng Anh hay nói, nên "GitHub Actions" không còn thành "huyết áp Action". Độ trễ gần như không đổi.
 
 ## [0.64.66] - 2026-09-27
 ### Sửa lỗi
