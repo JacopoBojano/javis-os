@@ -6,7 +6,7 @@ Lịch sử phiên bản Javis OS. Bản mới nhất ở trên cùng. Xem ngay 
 
 ## [0.64.73] - 2026-09-27
 ### Sửa lỗi
-- Chọn Groq Whisper thì câu gửi đi là chữ Groq nghe (đang soạn).
+- **Chọn Groq Whisper thì câu gửi đi là chữ Groq nghe được**, như trước bản 0.64.32. Từ 0.64.32, chữ Groq chỉ được dùng để đối chiếu, câu gửi đi vẫn là chữ của trình duyệt, nên tiếng Anh xen tiếng Việt bị chép thành "clash", "cloud Play" dù đã chọn Groq. Chữ của trình duyệt vẫn hiện tạm trong lúc đang nói.
 
 ## [0.64.72] - 2026-09-27
 ### Sửa lỗi
