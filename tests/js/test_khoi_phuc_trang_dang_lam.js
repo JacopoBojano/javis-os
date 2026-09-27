@@ -112,7 +112,7 @@ navCase({ javis_last_page: "not-a-page" }, "home");
 // A live socket has already delivered chat events while the page is in memory. Returning
 // from another app must leave the existing transcript DOM intact.
 {
-  let reloads = 0;
+  let reloads = 0, dongBo = 0;
   const ctx = {
     _hiddenAt: Date.now() - 30000,
     ws: { readyState: 1 },
@@ -120,11 +120,14 @@ navCase({ javis_last_page: "not-a-page" }, "home");
     savedSessionId: "main-chat",
     connect() {},
     openStoredSession() { reloads++; },
+    // 0.64.66: socket "còn sống" vẫn hỏi server tin cuối (rẻ); chỉ tải lại khi lệch.
+    _dongBoNeuLech() { dongBo++; },
   };
   vm.createContext(ctx);
   vm.runInContext(fn(appJs, "_resumeSauNgu", ""), ctx);
   ctx._resumeSauNgu(false);
   assert.equal(reloads, 0, "live transcript was rebuilt on return");
+  assert.equal(dongBo, 1, "a live-looking socket must still get the cheap last-message check");
   ctx.ws.readyState = 3;
   ctx._hiddenAt = Date.now() - 30000;
   ctx._resumeSauNgu(false);

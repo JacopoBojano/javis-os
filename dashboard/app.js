@@ -662,6 +662,7 @@ function connect() {
 // KHÔNG có nút reload nào cả - nên phải tự hồi sức: nối lại socket ngay (không đợi chuỗi
 // retry 3s bắt kịp) và kéo lại hội thoại đang xem từ server để bù tin đã lỡ.
 let _hiddenAt = 0;
+let _daChao = false;   // đã nhận "hello" lần nào chưa: lần sau là socket nối lại
 document.addEventListener("visibilitychange", () => {
   if (document.hidden) { _hiddenAt = Date.now(); adaptive.save("hidden"); return; }
   _resumeSauNgu(false);
@@ -679,13 +680,44 @@ function _resumeSauNgu(force) {
   // Chỉ đồng bộ từ server khi socket đứt hoặc trang trở về từ bfcache.
   if (savedSessionId && (force || !socketConSong)) {
     try { openStoredSession(savedSessionId); } catch (e) {}
+  } else if (savedSessionId) {
+    // Socket "còn sống" trên giấy: iOS hay trả về một socket readyState OPEN mà thực ra đã
+    // chết trong lúc app ngủ, tin tới lúc đó rơi mất. Chủ repo báo 27/09: hỏi lúc 14:53 mà
+    // khung chat không có câu trả lời nào, phải hỏi lại. Hỏi server tin CUỐI một cái (rẻ),
+    // lệch với khung đang hiện thì mới tải lại, không thì để yên.
+    _dongBoNeuLech();
   }
+}
+
+// So tin cuối trên server với tin cuối đang hiện; lệch thì tải lại hội thoại từ server.
+// Bỏ khối ẩn <!-- ... --> và khoảng trắng trước khi so, vì bản live và bản lưu có thể khác ở
+// đúng mấy chỗ đó.
+function _chuanTinSo(s) {
+  return String(s || "").replace(/<!--[\s\S]*?-->/g, "").replace(/\s+/g, " ").trim().slice(0, 80);
+}
+async function _dongBoNeuLech() {
+  const sid = savedSessionId;
+  if (!sid || (turns[sid] && turns[sid].running)) return;
+  try {
+    const s = await (await fetch(`/sessions/${encodeURIComponent(sid)}?limit=1`)).json();
+    if (sid !== savedSessionId || !s || s.error || (turns[sid] && turns[sid].running)) return;
+    const m = (s.messages || []).slice(-1)[0];
+    if (!m) return;
+    const c = convo.length ? convo[convo.length - 1] : null;
+    const cungVai = !!c && ((m.role === "assistant") === (c.role === "javis"));
+    const chuSv = m.role === "user" ? chuNguoiGo(m.content || "") : (m.content || "");
+    if (!cungVai || _chuanTinSo(chuSv) !== _chuanTinSo(c.text)) openStoredSession(sid);
+  } catch (e) {}
 }
 
 function handleMessage(data) {
   // Server chào khi kết nối: đồng bộ các job vẫn đang chạy. Job thuộc server,
   // không thuộc WebSocket nên đóng/F5 tab rồi mở lại vẫn xem và Stop được.
   if (data.type === "hello") {
+    // Socket NỐI LẠI (không phải lần chào đầu): tin tới trong lúc đứt có thể đã rơi mất, ví dụ
+    // câu trả lời của một lượt chạy xong khi điện thoại đang tắt màn hình. Đồng bộ nhẹ.
+    if (_daChao) setTimeout(_dongBoNeuLech, 300);
+    _daChao = true;
     adaptiveCapable = (data.capabilities || []).includes("adaptive_voice_v1");
     stopTag = data.stop_tag || null;
     if (window.JavisRunning) window.JavisRunning.clear();

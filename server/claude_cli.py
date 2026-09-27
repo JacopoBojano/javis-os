@@ -1379,6 +1379,13 @@ class CodexCLI:
                 )
                 with _PROC_LOCK:
                     _ACTIVE_PROCS[proc] = self.tag
+                # Nhớ pid (= mã nhóm tiến trình) theo tag lượt: hết lượt mà nhóm còn sống là Codex
+                # đã bỏ lại lệnh chạy ngầm, Javis nhận theo dõi (tien_trinh_nen, 0.64.66).
+                try:
+                    import tien_trinh_nen
+                    tien_trinh_nen.ghi_nhom(self.tag, proc.pid)
+                except Exception:
+                    pass
 
                 def _feed_stdin():
                     try:

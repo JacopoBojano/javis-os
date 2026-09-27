@@ -123,6 +123,7 @@ import channel_context   # metadata kênh + gom file trả về kênh chat (port
 import lang as lang_mod   # chốt ngôn ngữ trả lời cho một lượt
 import lang_registry      # sổ đăng ký: mọi thứ về một ngôn ngữ nằm đúng một chỗ
 import background_status  # việc nền còn sống của một khung chat + bắt lời hứa "xong em báo"
+import tien_trinh_nen     # lệnh chạy ngầm engine bỏ lại: nhận theo dõi, xong tự báo + làm tiếp
 import chatbot_log       # nhật ký hội thoại khách + thống kê câu bot trả lời không nổi
 import chatbot_runtime   # bộ giám sát Bot chuyên trách (mỗi bot một poller Telegram)
 import agent_avatar
@@ -9811,10 +9812,14 @@ def _viec_nen_view(brain: str, chat_id: str = "") -> dict:
         voice_tasks = voice_brain.pending_tasks(vsid) if vsid else []
     except Exception:
         voice_tasks = []
+    try:
+        jobs = tien_trinh_nen.dang_chay(brain_root=root)
+    except Exception:
+        jobs = []
     return background_status.active_view(
         tasks, loops, rems, chat_id=chat_id,
         orchestration=orchestration, running_loop=running_slug,
-        voice_tasks=voice_tasks,
+        voice_tasks=voice_tasks, jobs=jobs,
     )
 
 
@@ -9830,6 +9835,129 @@ async def background_active(brain: str = Query("brain"), chat_id: str = Query(""
         return {"ok": True, **_viec_nen_view(brain, chat_id)}
     except Exception as e:
         return JSONResponse({"ok": False, "error": f"{type(e).__name__}: {e}"}, status_code=500)
+
+
+# ---- Tiến trình nền engine bỏ lại (tien_trinh_nen, 0.64.66) ----
+#
+# Chủ repo báo 2026-09-27: "Đang render nền, xong mình ghép tiếng và gửi video" rồi im; video
+# xong lúc 14:57, tới 16:14 hỏi mới biết. Hết lượt, nhóm tiến trình của engine còn sống nghĩa là
+# engine đã bỏ lại lệnh chạy ngầm: nhận theo dõi, xong thì báo về và (nếu cần) tự làm tiếp.
+
+# Lượt nối tiếp của khung chat web cần chạy như một lượt chat thường của server, mà hàm dựng
+# lượt nằm TRONG handler WebSocket (closure). Mỗi lần một phiên chạy lượt, handler đó để lại một
+# cách mở lượt nối tiếp ở đây. Closure vẫn chạy được sau khi socket đóng (limit_resume dựa đúng
+# vào điều này). Máy chủ khởi động lại thì sổ rỗng: khi đó chỉ báo và mời nhắn "làm tiếp".
+_NOI_TIEP_WEB: dict = {}
+# Độ sâu của lượt nối tiếp ĐANG chạy theo phiên, để chuỗi nối tiếp có trần.
+_DO_SAU_NOI_TIEP: dict = {}
+
+
+def _link_file_trong_brain(brain_root: str, path: str) -> str:
+    """Đường dẫn file -> link markdown khung chat mở được (tương đối với brain), hoặc `path`."""
+    try:
+        p = Path(path).resolve()
+        rel = p.relative_to(Path(brain_root).resolve())
+        return f"[{p.name}]({rel.as_posix()})"
+    except Exception:
+        return f"`{path}`"
+
+
+async def _nhan_nuoi_tien_trinh(tag: str, brain: str, owner_chat: str, final_text: str,
+                                do_sau: int = 0, tu_lam_tiep: bool = True) -> str:
+    """Hết lượt: engine còn để lại lệnh chạy ngầm thì nhận theo dõi. Trả câu báo cho khung chat
+    (rỗng = không có gì chạy ngầm). Không bao giờ ném: lỗi ở đây không được làm hỏng lượt."""
+    try:
+        # Còn nhóm sống thì đợi một nhịp ân hạn: tiến trình phụ của engine (MCP stdio) hay nán
+        # lại vài trăm mili giây rồi mới thoát; nhận nuôi ngay là báo nhầm. Không có gì sống
+        # thì không đợi, lượt thường không chậm thêm chút nào.
+        if tien_trinh_nen.co_nhom_song(tag):
+            await asyncio.sleep(2.0)
+        hua = bool(background_status.detect_promise(final_text or ""))
+        ds = tien_trinh_nen.nhan_nuoi_theo_tag(tag, _brain_root(brain), owner_chat,
+                                               hua=hua, do_sau=do_sau)
+    except Exception as e:
+        print(f"[tien trinh nen] nhận theo dõi lỗi: {type(e).__name__}: {e}", file=sys.stderr)
+        return ""
+    if not ds:
+        return ""
+    # Giọng "mình" như các dòng hệ thống khác (promise_note): dòng này không biết người dùng
+    # xưng hô thế nào, "mình" là cách trung tính nhất.
+    dong = ["Mình đang theo dõi việc chạy nền của lượt này:"]
+    for v in ds:
+        dong.append(f"- `{v['mo_ta']}`")
+    tiep = next((v.get("sau_khi_xong") for v in ds if v.get("sau_khi_xong")), "")
+    if tu_lam_tiep and tiep:
+        dong.append(f"\nXong là mình tự báo về đây rồi làm tiếp: {tiep}")
+    elif tu_lam_tiep and any(v.get("noi_tiep") for v in ds):
+        dong.append("\nXong là mình tự báo về đây rồi làm nốt phần đã hẹn, không cần hỏi lại.")
+    else:
+        dong.append("\nXong là mình tự báo về đây, không cần hỏi lại.")
+    return "\n".join(dong)
+
+
+async def _khi_tien_trinh_xong(v: dict) -> None:
+    """Một việc chạy nền vừa kết thúc: báo đúng người (khung chat + hòm thư + thông báo đẩy),
+    rồi mở lượt nối tiếp nếu lượt trước đã dặn hoặc đã hứa."""
+    owner = str(v.get("chat_id") or "")
+    root = str(v.get("brain_root") or "")
+    trang = str(v.get("trang_thai") or "xong")
+    tl = tien_trinh_nen.thoi_luong(float(v.get("ket_thuc") or time.time()) - float(v.get("bat_dau") or time.time()))
+    mo_ta = str(v.get("mo_ta") or "tiến trình nền")
+    files = [_link_file_trong_brain(root, f) for f in (v.get("file_moi") or [])]
+    if trang == "huy":
+        dau, st = f"Đã dừng việc chạy nền sau {tl}.", "cancelled"
+    elif trang == "bo_theo_doi":
+        dau, st = (f"Việc chạy nền vẫn chưa xong sau {tl}, Javis ngừng theo dõi để khỏi treo mãi. "
+                   "Nó vẫn đang chạy trên máy."), "timeout"
+    else:
+        dau, st = f"Việc chạy nền đã xong sau {tl}.", "done"
+    than = [dau, f"`{mo_ta}`"]
+    if files:
+        than.append("File mới trong thư mục làm việc:\n" + "\n".join(f"- {x}" for x in files))
+    sid = owner[len(WEB_CHAT_PREFIX):] if owner.startswith(WEB_CHAT_PREFIX) else ""
+    do_sau = int(v.get("do_sau") or 0)
+    muon_tiep = st == "done" and bool(v.get("noi_tiep"))
+    runner = _NOI_TIEP_WEB.get(sid) if sid else None
+    se_tiep = muon_tiep and runner is not None and do_sau < tien_trinh_nen.TRAN_NOI_TIEP
+    loi_dan = str(v.get("sau_khi_xong") or "")
+    if se_tiep:
+        than.append("Mình làm tiếp phần còn lại ngay bây giờ.")
+    elif muon_tiep:
+        than.append("Nhắn \"làm tiếp\" để mình làm nốt" + (f": {loi_dan}" if loi_dan else " phần đã hẹn."))
+    text = "\n\n".join(than)
+    try:
+        await _notify_owner(owner, text, kind="answer", label="Việc chạy nền", source="job",
+                            viec={"kind": "job", "status": st, "title": mo_ta[:120],
+                                  "id": str(v.get("id") or "")})
+    except Exception as e:
+        print(f"[tien trinh nen] báo lỗi: {type(e).__name__}: {e}", file=sys.stderr)
+    if not se_tiep:
+        return
+    nhac = [f"[Việc chạy nền đã xong] {mo_ta} (chạy {tl})."]
+    if files:
+        nhac.append("File mới: " + ", ".join(v.get("file_moi") or []))
+    nhac.append("Làm tiếp: " + (loi_dan or "hoàn tất phần việc đã hẹn với người dùng ở lượt trước, "
+                                "tự kiểm tra kết quả rồi gửi kết quả cuối cùng vào khung chat này."))
+    # KHÔNG await: lượt nối tiếp có thể phải đợi phiên rảnh tới 10 phút, mà hàm này đang chạy
+    # trong vòng theo dõi chung của mọi việc nền. Giữ tham chiếu kẻo bộ dọn rác nuốt task.
+    try:
+        t = asyncio.create_task(runner("\n".join(nhac), do_sau + 1))
+        _PUSH_TASKS.add(t)
+        t.add_done_callback(_PUSH_TASKS.discard)
+    except Exception as e:
+        print(f"[tien trinh nen] lượt nối tiếp lỗi: {type(e).__name__}: {e}", file=sys.stderr)
+
+
+tien_trinh_nen.dat_khi_xong(_khi_tien_trinh_xong)
+
+
+@app.on_event("startup")
+async def _khoi_dong_tien_trinh_nen():
+    """Việc chạy nền sống sót qua lần khởi động lại (engine chạy session riêng): theo dõi tiếp."""
+    try:
+        tien_trinh_nen.khoi_dong()
+    except Exception as e:
+        print(f"[tien trinh nen] khởi động lỗi: {type(e).__name__}: {e}", file=sys.stderr)
 
 
 async def _canh_bao_hua_suong(brain: str, chat_id: str, final_text: str,
@@ -13527,6 +13655,17 @@ async def websocket_endpoint(ws: WebSocket):
             # Đường lưu DÙNG CHUNG với Telegram (_persist_turn) - nó tự bóc khối điều khiển.
             if final_text:
                 await _persist_turn(store, conv_sid, brain, user_message, final_text)
+                # Engine bỏ lại lệnh chạy ngầm (render, build...) → Javis nhận theo dõi và nói ra
+                # ngay. PHẢI chạy trước cảnh báo hứa suông: có việc được theo dõi thì lời hứa
+                # "xong em gửi" đã có cơ chế thật đứng sau, không còn là hứa suông.
+                try:
+                    _cau_nuoi = await _nhan_nuoi_tien_trinh(
+                        turn_tag, brain, WEB_CHAT_PREFIX + conv_sid, final_text,
+                        do_sau=_DO_SAU_NOI_TIEP.pop(conv_sid, 0))
+                    if _cau_nuoi:
+                        await push_to_chat(conv_sid, _cau_nuoi)
+                except Exception as _e:
+                    print(f"[tien trinh nen] {type(_e).__name__}: {_e}", file=sys.stderr)
                 # Hứa "xong em báo" mà không có việc nền nào → nói thẳng ra ngay dưới câu trả
                 # lời. Đẩy thành bong bóng RIÊNG (không sửa câu của model, và câu đó cũng đã
                 # stream xong từ lâu). push_to_chat ghi kho phiên trước rồi mới bắn WebSocket
@@ -13595,6 +13734,7 @@ async def websocket_endpoint(ws: WebSocket):
                                 "session_id": conv_sid, **context_runtime.event_fields(runtime_trace)})
             finally:
                 luot_dang_chay.ket_thuc(_khoa_luot)
+                tien_trinh_nen.bo_tag(turn_tag)   # lượt lỗi/bị dừng không tới bước nhận nuôi
                 context_runtime.reset_trace(_trace_token)
                 await send_raw({"type": "turn_done", "session_id": conv_sid,
                                 **context_runtime.event_fields(runtime_trace)})
@@ -14028,6 +14168,34 @@ async def websocket_endpoint(ws: WebSocket):
                 _TG_SESS.pop(khoa_mach, None)
             await push_to_chat(conv_sid, out or "(việc nền xong nhưng không có nội dung)", viec=viec)
 
+        async def _start_followup_turn(conv_sid, text, brain, do_sau):
+            """Lượt nối tiếp sau khi một việc chạy nền xong (tien_trinh_nen, 0.64.66).
+
+            Là một job chat bình thường của server, y như lượt tự chạy lại của limit_resume: tab
+            nào đang mở cũng thấy nó stream, Stop được, kết quả lưu vào kho phiên. Người dùng
+            đang chat dở thì đợi lượt đó xong rồi mới chen vào (tối đa 10 phút), không cắt
+            ngang. Tin mở lượt được lưu như một tin người dùng có đánh dấu rõ, để mở lại hội
+            thoại vẫn hiểu vì sao Javis tự nói tiếp."""
+            for _ in range(120):
+                if not _CHAT_RUNTIME.get_job(conv_sid):
+                    break
+                await asyncio.sleep(5)
+            else:
+                await push_to_chat(conv_sid, "Việc chạy nền đã xong nhưng hội thoại đang bận quá "
+                                   "lâu, mình chưa làm tiếp được. Nhắn \"làm tiếp\" để mình làm nốt.")
+                return
+            store.append_message(conv_sid, "user", text)
+            turn_tag = f"chat:{conv_sid[:12]}:{uuid.uuid4().hex[:8]}"
+            _DO_SAU_NOI_TIEP[conv_sid] = int(do_sau or 0)
+            runtime_trace = _CONTEXT_RUNTIME.start_turn(conv_sid, brain, "dashboard")
+            task = asyncio.create_task(run_turn(
+                conv_sid, text, brain, turn_tag, runtime_trace, False))
+            _CHAT_RUNTIME.register_job(
+                conv_sid, task, turn_tag,
+                runtime_task_id=runtime_trace.task_id if runtime_trace else "",
+                runtime_step_id=runtime_trace.step_id if runtime_trace else "",
+            )
+
         async def _start_resumed_turn(conv_sid, user_message, brain, attempt, notice):
             """Chạy lại một lượt đã vấp hạn mức gói thuê bao (limit_resume gọi tới, khi tới mốc
             reset hoặc khi người dùng bấm "Chạy lại ngay").
@@ -14248,6 +14416,10 @@ async def websocket_endpoint(ws: WebSocket):
                                 "voice_turn_id": str(payload.get("voice_turn_id") or "")})
             turn_tag = f"chat:{conv_sid[:12]}:{uuid.uuid4().hex[:8]}"
             runtime_trace = _CONTEXT_RUNTIME.start_turn(conv_sid, brain, "dashboard")
+            # Để lại cách mở lượt nối tiếp cho phiên này: việc chạy nền mà lượt này bỏ lại xong
+            # thì tien_trinh_nen gọi tới đây để làm nốt (ghép tiếng, kiểm tra, gửi file...).
+            _NOI_TIEP_WEB[conv_sid] = (lambda _t, _d, _s=conv_sid, _b=brain:
+                                       _start_followup_turn(_s, _t, _b, _d))
             # Phiên workflow:<slug>: mỗi tin là một lần chạy quy trình, không phải một lượt
             # hỏi bộ não chính - rẽ nhánh TRƯỚC cả Voice V2, vì trang Cộng sự không có mic.
             # Khung Trò chuyện đã GỌI cộng sự này bằng lệnh "/" (dashboard gửi kèm mỗi tin).
@@ -16851,6 +17023,17 @@ async def _tg_answer(text, meta=None, progress=None, channel="telegram", bot=Non
         # Ở kênh này tin nhắn CHƯA gửi đi nên nối luôn vào cuối, khỏi phải bắn thêm một tin.
         # Bot chuyên trách đứng ngoài: nó nói chuyện với người lạ và không có quyền giao việc
         # nền, nên dán một dòng nội bộ về điều phối Kanban vào đó là lạc chỗ.
+        if not bot and isinstance(out, dict) and channel == "telegram":
+            # Engine bỏ lại lệnh chạy ngầm trong lượt Telegram: theo dõi, xong báo về đúng người.
+            # Lượt nối tiếp tự động chỉ có ở khung chat web; ở đây mời nhắn "làm tiếp".
+            try:
+                _cau_nuoi = await _nhan_nuoi_tien_trinh(
+                    f"telegram:{chat_id}", brain, str(chat_id or ""), out.get("text") or "",
+                    tu_lam_tiep=False)
+                if _cau_nuoi:
+                    out["text"] = (out.get("text") or "") + "\n\n" + _cau_nuoi
+            except Exception as e:
+                print(f"[tien trinh nen telegram] {type(e).__name__}: {e}", file=__import__('sys').stderr)
         if not bot and isinstance(out, dict):
             try:
                 _canh_bao = await _canh_bao_hua_suong(
