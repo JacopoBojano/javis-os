@@ -499,7 +499,7 @@ class JavisVoice {
 
   // Mảnh mới là BẢN SỬA của đoạn cuối câu đang có không? Có thì trả câu đã thay đoạn cuối bằng
   // mảnh mới, không thì null. Thuần để test bằng node.
-  // Vì sao (0.64.71): Chrome Android không chỉ KÉO DÀI câu mà còn SỬA LẠI nó giữa các mảnh:
+  // Vì sao (0.64.72): Chrome Android không chỉ KÉO DÀI câu mà còn SỬA LẠI nó giữa các mảnh:
   // "tìm hiểu cho anh Ford plat for" -> "tìm hiểu cho anh ford plat" (ngắn đi, đổi hoa thường)
   // -> "... ford plat form". Luật tiền tố ở ghepManh không nhận ra nên nối thêm, và chủ dự án
   // nhận được năm bản của cùng một câu nối nhau (máy tính bảng Android, 27/09).

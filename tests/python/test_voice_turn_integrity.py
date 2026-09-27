@@ -33,7 +33,7 @@ class VoiceTurnIntegrity(unittest.IsolatedAsyncioTestCase):
                 frames.append(frame)
 
             async def fallback(sid, message, *args):
-                # 0.64.71: lượt quay về câu gốc gửi bộ não chính CÂU GỐC + đúng một lời dặn cố
+                # 0.64.72: lượt quay về câu gốc gửi bộ não chính CÂU GỐC + đúng một lời dặn cố
                 # định (voice_brain.GHI_CHU_CAU_NGHE). Bóc lời dặn ra để mọi phép so bên dưới
                 # vẫn canh câu gốc còn nguyên từng chữ; self.ghi_chu đếm số lần có lời dặn.
                 duoi = '\n\n' + voice_brain.GHI_CHU_CAU_NGHE

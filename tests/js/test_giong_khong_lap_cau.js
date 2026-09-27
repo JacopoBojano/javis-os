@@ -116,7 +116,7 @@ const CAU = "Em có nghe thấy anh nói gì không";
       gui.length === 1 && gui[0] === "xem doanh thu tháng này so tháng trước", JSON.stringify(gui));
   }
 
-  // ---- 4. Android SỬA LẠI chữ giữa các mảnh (0.64.71) ----
+  // ---- 4. Android SỬA LẠI chữ giữa các mảnh (0.64.72) ----
   // Chủ dự án 27/09, máy tính bảng Android: nói "tìm hiểu cho anh Workers for Platforms của
   // Cloudflare", tin gửi đi thành 5 bản của cùng một câu nối nhau. Mảnh sau không KÉO DÀI
   // nguyên văn mảnh trước mà SỬA nó: "Ford plat for" -> "ford plat" (ngắn đi, đổi hoa

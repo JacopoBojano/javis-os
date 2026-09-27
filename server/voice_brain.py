@@ -177,7 +177,7 @@ MAX_GHEP_DIEN_GIAI = 4
 # vẫn sửa được một cụm tên bị nghe thành 3 tiếng ("anh hỏi về khít half action"). Sửa bằng
 # từ tiếng Việt vẫn giữ trần cũ, xem safe_transcript_rewrite.
 MAX_SUA_TOI_THIEU = 4
-# Cụm thay bằng thuật ngữ tiếng Anh được dài tới chừng này tiếng (0.64.71).
+# Cụm thay bằng thuật ngữ tiếng Anh được dài tới chừng này tiếng (0.64.72).
 MAX_GHEP_ANH = 6
 # Từ ngắn (dưới nghe_sua.KHOA_MIN_MO) được thay bằng từ tiếng Anh khi CÁCH ĐỌC kiểu Việt giống
 # từ mức này: "cave" (đọc "cây") -> "KV" (đọc "cây vi") là 0,67.

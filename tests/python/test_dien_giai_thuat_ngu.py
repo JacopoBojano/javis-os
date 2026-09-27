@@ -2,7 +2,7 @@
 
     python tests/run.py dien_giai_thuat_ngu
 
-Vì sao file này tồn tại (0.64.71): chủ dự án 27/09 nói "tìm hiểu cho anh Workers for Platforms
+Vì sao file này tồn tại (0.64.72): chủ dự án 27/09 nói "tìm hiểu cho anh Workers for Platforms
 của Cloudflare" và "KV của Cloudflare"; máy nghe chép "Quốc cơ ford plat form của clap Play",
 "cave". Bộ não giọng viết lại đúng ở dòng JAVIS_NGHE nhưng rào voice_brain.safe_transcript_rewrite
 chặn (cụm 5 tiếng vượt trần 4; "KV" quá ngắn; so mặt chữ tiếng Anh với tiếng Việt), lượt quay
