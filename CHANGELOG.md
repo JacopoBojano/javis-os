@@ -6,7 +6,7 @@ Lịch sử phiên bản Javis OS. Bản mới nhất ở trên cùng. Xem ngay 
 
 ## [0.64.69] - 2026-09-27
 ### Sửa lỗi
-- Nút cập nhật hiện ngay khi có bản mới (đang soạn).
+- **Nút cập nhật hiện ngay khi có bản mới:** trước đây, trong vài phút sau mỗi lần phát hành, khung trên có thể báo "đang dùng bản mới nhất" dù danh sách bên dưới đã có bản mới, và không có nút. Nay hai chỗ luôn khớp nhau.
 
 ## [0.64.68] - 2026-09-27
 ### Cải thiện
