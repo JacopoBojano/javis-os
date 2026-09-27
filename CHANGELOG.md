@@ -4,6 +4,10 @@ Lịch sử phiên bản Javis OS. Bản mới nhất ở trên cùng. Xem ngay 
 
 Định dạng: mỗi phiên bản là một khối `## [x.y.z] - ngày`, bên dưới nhóm thay đổi theo `### Thêm mới / Sửa lỗi / Cải thiện / Bảo mật`.
 
+## [0.64.68] - 2026-09-27
+### Cải thiện
+- Đọc từ tiếng Anh kiểu Việt, sửa câu nghe được (đang soạn).
+
 ## [0.64.67] - 2026-09-27
 ### Cải thiện
 - **Đọc từ tiếng Anh cho ra tiếng Anh:** trong câu Việt xen Anh, những từ như GitHub Actions, deploy, dashboard nay được đọc bằng giọng tiếng Anh, phần tiếng Việt vẫn giọng Việt. Áp dụng cho giọng Edge Hoài My, Nam Minh và các giọng đa ngôn ngữ.
