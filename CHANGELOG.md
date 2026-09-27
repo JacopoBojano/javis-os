@@ -6,7 +6,9 @@ Lịch sử phiên bản Javis OS. Bản mới nhất ở trên cùng. Xem ngay 
 
 ## [0.64.71] - 2026-09-27
 ### Sửa lỗi
-- Không lặp câu khi nói trên Android, bong bóng hiện đúng thuật ngữ (đang soạn).
+- **Nói trên điện thoại, máy tính bảng Android không còn bị lặp câu:** trình duyệt Android hay gửi đi gửi lại một câu mà sửa dần chữ cuối, trước đây mỗi bản bị nối thêm vào tin. Nay chỉ giữ bản cuối cùng.
+- **Bong bóng hiện đúng thuật ngữ nhiều hơn:** "cave" thành "KV", "Quốc cơ ford plat form của clap Play" thành "Workers for Platforms của Cloudflare".
+- Câu nào máy chưa chắc để tự sửa thì Javis trả lời thẳng vào việc, không mở đầu bằng "em hiểu X là Y" nữa.
 
 ## [0.64.70] - 2026-09-27
 ### Cải thiện
