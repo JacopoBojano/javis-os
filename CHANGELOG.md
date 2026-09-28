@@ -4,7 +4,8 @@ Lịch sử phiên bản Javis OS. Bản mới nhất ở trên cùng. Xem ngay 
 
 Định dạng: mỗi phiên bản là một khối `## [0.64.77] - 2026-09-28
 ### Sửa lỗi
-- Đang làm: Telegram không hiện nguyên câu lệnh trong dòng trạng thái.
+- **Telegram và Zalo không còn in nguyên câu lệnh máy** kiểu `/bin/sh -lc "sed -n ..."` vào dòng trạng thái khi dùng ChatGPT. Dòng đó nay chỉ ghi gọn việc đã làm, ví dụ "⚙ Chạy lệnh · pos_statistics · 2m39s".
+- Trên trang Chat, bước chạy lệnh của ChatGPT hiện đúng nhãn "Chạy lệnh: ..." như các bộ não khác.
 
 ## [x.y.z] - ngày`, bên dưới nhóm thay đổi theo `### Thêm mới / Sửa lỗi / Cải thiện / Bảo mật`.
 
