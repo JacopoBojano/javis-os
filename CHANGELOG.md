@@ -6,7 +6,8 @@ Lịch sử phiên bản Javis OS. Bản mới nhất ở trên cùng. Xem ngay 
 
 ## [0.64.75] - 2026-09-28
 ### Sửa lỗi
-- Đang làm: ảnh ChatGPT (Codex) tự tạo về thẳng khung chat.
+- **Nhờ Javis vẽ ảnh khi đang dùng ChatGPT (Codex), ảnh hiện ngay trong khung chat.** Trước đây Codex vẽ bằng công cụ riêng rồi cất ảnh ngoài brain, nên link bấm vào không mở được, kèm dòng "không tìm thấy trong brain", và phải tự đi lưu ảnh về.
+- Ảnh nay tự vào thư mục `attachments` của brain, Telegram cũng nhận được ảnh đính kèm. Ảnh vẽ xong mà câu trả lời quên nhắc cũng được hiện ở cuối.
 
 ## [0.64.74] - 2026-09-28
 ### Sửa lỗi
