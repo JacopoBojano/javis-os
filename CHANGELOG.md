@@ -4,6 +4,10 @@ Lịch sử phiên bản Javis OS. Bản mới nhất ở trên cùng. Xem ngay 
 
 Định dạng: mỗi phiên bản là một khối `## [x.y.z] - ngày`, bên dưới nhóm thay đổi theo `### Thêm mới / Sửa lỗi / Cải thiện / Bảo mật`.
 
+## [0.64.75] - 2026-09-28
+### Sửa lỗi
+- Đang làm: ảnh ChatGPT (Codex) tự tạo về thẳng khung chat.
+
 ## [0.64.74] - 2026-09-28
 ### Sửa lỗi
 - **Groq Whisper bịa câu thì giữ câu trình duyệt đã nghe:** khi audio thiếu tiếng, Groq hay tự đẻ ra lời kết video ("Cảm ơn các bạn đã theo dõi", "nhận thêm thông tin trong phần bình luận") và đè lên câu đúng. Nay câu Groq lệch hẳn với câu trình duyệt thì bị bỏ.
