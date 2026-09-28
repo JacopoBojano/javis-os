@@ -2,7 +2,11 @@
 
 Lịch sử phiên bản Javis OS. Bản mới nhất ở trên cùng. Xem ngay trong app tại **Cài đặt → Cập nhật**.
 
-Định dạng: mỗi phiên bản là một khối `## [x.y.z] - ngày`, bên dưới nhóm thay đổi theo `### Thêm mới / Sửa lỗi / Cải thiện / Bảo mật`.
+Định dạng: mỗi phiên bản là một khối `## [0.64.77] - 2026-09-28
+### Sửa lỗi
+- Đang làm: Telegram không hiện nguyên câu lệnh trong dòng trạng thái.
+
+## [x.y.z] - ngày`, bên dưới nhóm thay đổi theo `### Thêm mới / Sửa lỗi / Cải thiện / Bảo mật`.
 
 ## [0.64.75] - 2026-09-28
 ### Sửa lỗi
