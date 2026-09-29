@@ -41,6 +41,7 @@ import channels
 import chatbot_grounding
 import chatbot_log
 import chatbot_store
+import chatbot_tu_dong
 import conversations
 
 # Kênh -> lớp vận chuyển: tra SỔ ĐĂNG KÝ KÊNH (server/channels). Trước 0.61.0 là một bảng chép
@@ -170,6 +171,18 @@ bạn không chắc có nên nhân danh chủ trả lời hay không, thì KHÔN
 `{IM_LANG}` và không thêm chữ nào khác.
 """
 
+# Chế độ "Tự đánh giá" (0.64.82): một tin trong NHÓM mà không ai gọi tên bot. Cùng lý do với đoạn
+# trên (chủ đã chọn để bot tự quyết, nên phải nói cho model biết), và cũng chỉ hiện ở đúng lượt
+# đó: lượt được tag hay chat riêng thì bot trả lời bình thường, không bị dạy im.
+_CAU_NHOM_TU_DONG = f"""
+## Tin này ở trong NHÓM và không ai gọi tên bạn
+
+Bạn đang đọc một nhóm chat. Tin dưới đây không nhắm tới bạn. Chỉ trả lời khi đó là một câu hỏi
+hoặc lời nhờ giúp mà tài liệu ở trên trả lời được. Nếu là các thành viên trò chuyện với nhau,
+đùa, hoặc tài liệu không đủ để trả lời chắc chắn thì KHÔNG trả lời: viết đúng một dòng
+`{IM_LANG}` và không thêm chữ nào khác.
+"""
+
 
 def build_bot_prompt(bot: dict) -> str:
     """System prompt của một lượt bot = ĐÚNG file Agent, cộng tài liệu đã tra sẵn.
@@ -230,6 +243,10 @@ def build_bot_prompt(bot: dict) -> str:
     # Kênh của LƯỢT này, do _make_answer_fn gắn vào. Chỉ Zalo cá nhân mới có thêm đoạn này.
     if (bot or {}).get("_kenh_luot") == "zalo_personal":
         phan.append(_CAU_ZALO_CA_NHAN)
+    # Lượt Tự đánh giá do _make_answer_fn gắn. Cờ chứ không suy từ meta: prompt được dựng ở đây,
+    # nơi không có meta của lượt.
+    if (bot or {}).get("_tu_dong"):
+        phan.append(_CAU_NHOM_TU_DONG)
     return "\n".join(phan)
 
 
@@ -304,6 +321,11 @@ def _ly_do_im(bot_cfg: dict, meta: dict) -> str:
     if bot_cfg.get("reply_when") == "always":
         return ""
     if (meta or {}).get("mentioned") or (meta or {}).get("reply_to_bot"):
+        return ""
+    # "Tự đánh giá" cho đi tiếp: tin này chưa được gọi tên, nhưng có trả lời hay không do bộ đánh
+    # giá quyết ở `_make_answer_fn` (cần tra tài liệu, việc chặn, không làm được ở hàm thuần này).
+    # So đúng chữ "auto": giá trị lạ vẫn rơi xuống "khong_goi_ten" bên dưới, tức fail-closed.
+    if bot_cfg.get("reply_when") == "auto":
         return ""
     return "khong_goi_ten"
 
@@ -389,6 +411,10 @@ def _make_precheck_fn(bot_id: str):
         # thay vì chép điều kiện ra đây: chép là có ngày hai chỗ nói khác nhau.
         gia_dinh = dict(cfg)
         gia_dinh["groups"] = [str((meta or {}).get("chat_id") or "")]
+        # "Tự đánh giá" cho mọi tin đi tiếp, nhưng một tin chưa gọi tên bot KHÔNG phải một lần
+        # gọi: đếm nó là "có người gọi bot" thì hàng chờ duyệt nhóm đầy số lần gọi ma.
+        if gia_dinh.get("reply_when") == "auto":
+            gia_dinh["reply_when"] = "mention"
         if _ly_do_im(gia_dinh, meta or {}):
             return {}
         _ghi_nhom_cho(bot_id, meta or {}, text)
@@ -645,6 +671,37 @@ def ghi_tin_bot(cfg: dict, meta: dict, text: str, loi: str = "", files=None) -> 
         print(f"[chatbot conversations] {type(e).__name__}: {e}", file=sys.stderr)
 
 
+async def _tra_tai_lieu(bot_id: str, cfg: dict, text: str) -> dict:
+    """Tra brain của bot cho MỘT câu hỏi. Quét đĩa + chấm điểm là việc CHẶN, đẩy sang thread để
+    không chẹn event loop (poller của các bot khác và của cả Javis đều chạy chung một loop)."""
+    tl = {"co": False, "khoi": "", "nguon": []}
+    try:
+        root = _deps["brain_root"](cfg["brain"])
+        tl = await asyncio.to_thread(chatbot_grounding.thu_thap, root, text)
+    except Exception as e:
+        print(f"[chatbot {bot_id}] tra tài liệu lỗi: {e}", file=sys.stderr)
+    return tl
+
+
+def _ghi_bo_qua(bot_id: str, cfg: dict, meta: dict, text: str, ma: str, tl: dict = None) -> None:
+    """Ghi nhật ký một tin bot CHỌN bỏ qua ở chế độ Tự đánh giá, kèm lý do đọc được.
+
+    Chỉ ghi những tin đã QUA cửa "có giống câu hỏi không" (tin trò chuyện thì không: nhóm đông
+    sẽ làm nhật ký tràn). Đây là dữ liệu để chủ chỉnh tài liệu: một dòng "khong_co_tai_lieu" là
+    một câu hỏi thật của người trong nhóm mà brain của bot chưa có.
+    """
+    tl = tl or {}
+    chatbot_log.ghi(bot_id, {
+        "chat_id": str((meta or {}).get("chat_id") or ""),
+        "chat_type": (meta or {}).get("chat_type"),
+        "user_name": (meta or {}).get("user_name"), "hoi": text,
+        "dap": f"(bot bỏ qua: {chatbot_tu_dong.ly_do_de_doc(ma)})", "loi": "",
+        "co_tai_lieu": bool(tl.get("co")), "nguon": tl.get("nguon"),
+        "chuyen_nguoi": False, "bi": False, "bo_qua": ma,
+        "muc_quyen": cfg.get("muc_quyen") or "suggest",
+    })
+
+
 def _make_answer_fn(bot_id: str):
     async def _answer(text, meta=None, progress=None):
         cfg = chatbot_store.get_bot(bot_id)
@@ -656,7 +713,27 @@ def _make_answer_fn(bot_id: str):
         if not _nen_tra_loi(cfg, meta or {}):
             return {"text": "", "files": [], "im_lang": True}
         chat_id = str((meta or {}).get("chat_id") or "")
+        user_id = str((meta or {}).get("user_id") or "")
+        # Chế độ Tự đánh giá: tin nhóm KHÔNG ai gọi bot. Đánh giá TRƯỚC mọi thứ tốn kém hoặc có
+        # tác dụng phụ (hạn mức tần suất, ghi Hộp thư, lượt model): tin bị loại không được đụng
+        # vào bộ đếm nào, và tin trò chuyện của người ta không được thành một dòng nhật ký.
+        tu_dong = chatbot_tu_dong.can_danh_gia(cfg, meta or {})
+        tl = None
+        if tu_dong:
+            if not chatbot_tu_dong.nhin_nhu_cau_hoi(text)[0]:
+                return {"text": "", "files": [], "im_lang": True}
+            tl = await _tra_tai_lieu(bot_id, cfg, text)
+            ma = "" if tl.get("co") else "khong_co_tai_lieu"
+            ma = ma or chatbot_tu_dong.duoc_tra_loi(bot_id, chat_id, user_id)
+            if ma:
+                _ghi_bo_qua(bot_id, cfg, meta, text, ma, tl)
+                return {"text": "", "files": [], "im_lang": True}
         if _qua_han_muc(bot_id, chat_id, cfg.get("rate_limit")):
+            if tu_dong:
+                # Tin tự trả lời mà quá hạn mức thì im, KHÔNG nói "nhắn hơi nhanh" trước cả nhóm:
+                # người ta đâu có gọi bot.
+                _ghi_bo_qua(bot_id, cfg, meta, text, "het_han_muc", tl)
+                return {"text": "", "files": [], "im_lang": True}
             return {"text": "Anh chị nhắn hơi nhanh, em xin phép trả lời lại sau ít phút ạ.",
                     "files": []}
         # Hộp thư hội thoại: ghi tin khách TRƯỚC khi gọi engine, để lượt gãy vẫn còn tin khách.
@@ -669,21 +746,24 @@ def _make_answer_fn(bot_id: str):
             return {"text": "", "files": [], "im_lang": True}
 
         # Tra tài liệu TRƯỚC rồi nhét vào prompt, thay vì trông vào việc model tự chịu mở file.
-        # Quét đĩa + chấm điểm là việc CHẶN, đẩy sang thread để không chẹn event loop (poller
-        # của các bot khác và của cả Javis đều chạy chung một loop).
-        tl = {"co": False, "khoi": "", "nguon": []}
-        try:
-            root = _deps["brain_root"](cfg["brain"])
-            tl = await asyncio.to_thread(chatbot_grounding.thu_thap, root, text)
-        except Exception as e:
-            print(f"[chatbot {bot_id}] tra tài liệu lỗi: {e}", file=sys.stderr)
+        # Lượt Tự đánh giá đã tra ở trên rồi, dùng lại kết quả đó chứ không quét đĩa lần hai.
+        if tl is None:
+            tl = await _tra_tai_lieu(bot_id, cfg, text)
         cfg["_tai_lieu"] = tl
         cfg["_kenh_luot"] = kenh_luot
+        cfg["_tu_dong"] = tu_dong
+        # Trong nhóm Zalo cá nhân cả nhóm dùng CHUNG một mạch hội thoại (khoá theo nhóm), nên
+        # model phải biết ai đang nói. Telegram giữ nguyên như cũ.
+        text_engine = text
+        if kenh_luot == "zalo_personal" and (meta or {}).get("chat_type") == "group":
+            ten_nguoi = str((meta or {}).get("user_name") or "").strip()
+            if ten_nguoi:
+                text_engine = f"[{ten_nguoi}] {text}"
 
         # Bản ghi truyền xuống lõi phải có brain và slug - lõi dựa vào đó để đổi brain, đổi
         # khoá phiên và đổi nhãn kênh.
         try:
-            out = await _deps["answer"](text, meta, progress, channel=kenh_luot, bot=cfg)
+            out = await _deps["answer"](text_engine, meta, progress, channel=kenh_luot, bot=cfg)
         except Exception as e:
             print(f"[chatbot {bot_id}] {type(e).__name__}: {e}", file=sys.stderr)
             xin_loi = "Em đang gặp trục trặc, anh chị nhắn lại giúp em sau ít phút ạ."
@@ -706,21 +786,25 @@ def _make_answer_fn(bot_id: str):
                    "files": []}
 
         dap = (out or {}).get("text") or ""
-        # Bot TỰ QUYẾT im lặng (chỉ được dạy ở Zalo cá nhân, xem _CAU_ZALO_CA_NHAN). Đây không phải
-        # lượt "bí" và cũng không phải lượt lỗi: bot hiểu tin nhắn và chọn không nhân danh chủ trả
-        # lời. Ghi vào nhật ký để chủ soi lại được, nhưng không gửi gì, không vào Hộp thư như một
-        # câu bot nói, không tính vào bộ đếm bí/gọi người.
+        # Bot TỰ QUYẾT im lặng (được dạy ở Zalo cá nhân và ở lượt Tự đánh giá, xem _CAU_ZALO_CA_NHAN
+        # và _CAU_NHOM_TU_DONG). Đây không phải lượt "bí" và cũng không phải lượt lỗi: bot hiểu
+        # tin nhắn và chọn không nhân danh chủ trả lời. Ghi vào nhật ký để chủ soi lại được, nhưng
+        # không gửi gì, không vào Hộp thư như một câu bot nói, không tính vào bộ đếm bí/gọi người.
         if not loi_ky_thuat and IM_LANG.lower() in dap.lower():
             _BI_LIEN_TIEP[(bot_id, chat_id)] = 0
             chatbot_log.ghi(bot_id, {
                 "chat_id": chat_id, "chat_type": (meta or {}).get("chat_type"),
                 "user_name": (meta or {}).get("user_name"), "hoi": text,
-                "dap": "(bot chọn không trả lời)", "loi": "",
+                "dap": "(bot chọn không trả lời)", "loi": "", "bo_qua": "bot_tu_im",
                 "co_tai_lieu": bool(tl.get("co")), "nguon": tl.get("nguon"),
                 "chuyen_nguoi": False, "bi": False,
                 "muc_quyen": cfg.get("muc_quyen") or "suggest",
             })
             return {"text": "", "files": [], "im_lang": True}
+        # Chỉ lượt bot THẬT SỰ nói mới tốn hạn mức tự trả lời: lượt viết [IM_LANG] ở trên đã
+        # return, và lượt gãy không phải một câu trả lời.
+        if tu_dong and not loi_ky_thuat and dap.strip():
+            chatbot_tu_dong.ghi_da_tra_loi(bot_id, chat_id, user_id)
         # "Bí" đo bằng chính CÂU BOT VỪA NÓI, không bằng việc có tìm ra tài liệu hay không.
         #
         # Ở chế độ theo Agent thì không có tài liệu là chuyện thường - bot vẫn trả lời tốt bằng
@@ -747,8 +831,10 @@ def _make_answer_fn(bot_id: str):
             bao_lan_dau = False
             _DA_BAO_LOI.discard(bot_id)
 
+        # Lượt Tự đánh giá thì "bí" KHÔNG gọi người: tin đó đâu ai nhờ bot, đánh thức nhân viên
+        # vì một câu người ta hỏi nhau trong nhóm là cách nhanh nhất để họ tắt thông báo.
         goi_nguoi = bool(cfg.get("handoff_to")) and (
-            bao_lan_dau or (not loi_ky_thuat and lien_tiep >= BI_LIEN_TIEP_DE_GOI))
+            bao_lan_dau or (not loi_ky_thuat and not tu_dong and lien_tiep >= BI_LIEN_TIEP_DE_GOI))
 
         chatbot_log.ghi(bot_id, {
             "chat_id": chat_id, "chat_type": (meta or {}).get("chat_type"),
@@ -848,6 +934,11 @@ def start_bot(bot_id: str) -> tuple[bool, str]:
         )
         if kenh == "telegram":
             chung["callback_fn"] = None
+        if kenh == "zalo_personal":
+            # Lớp vận chuyển Zalo cần đọc cấu hình bot SỐNG (chế độ trả lời trong nhóm) để biết có
+            # nên chờ nhường trước khi trả lời tin không ai gọi tên. Đọc lại mỗi lần chứ không giữ
+            # bản chụp: chủ đổi chế độ ở trang Chatbot là có tác dụng ngay.
+            chung["cfg_fn"] = (lambda _b=bot_id: chatbot_store.get_bot(_b) or {})
         tb = Lop(
             token,
             "",                       # KHÔNG whitelist: bot khách hàng vốn để người lạ nhắn.

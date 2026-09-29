@@ -27,7 +27,8 @@ Chủ quyết định 29/09/2026: bot TỰ TRẢ LỜI và TỰ QUYẾT có nên
 từng người, vì nick này chủ tự quản lý và đã có Hộp thư để giám sát. Đây là chỗ đảo lại quyết
 định bỏ tự trả lời Zalo hồi 21/07 (bản khi đó dựa trên listener luật, nay là bot chuyên trách
 có Agent, mức quyền, giới hạn tần suất và Hộp thư). Xem "Bot trả lời" ở cuối file: chỉ trả lời
-chat RIÊNG dạng chữ, bỏ tin cũ, im khi chủ đang tự nhắn.
+tin dạng chữ, bỏ tin cũ, im khi chủ đang tự nhắn. Từ 0.64.82 bot còn trả lời trong nhóm đã cho
+phép (tag/reply, hoặc chế độ Tự đánh giá), xem `channels.zalo_personal.Transport`.
 
 Chưa có: tải media. Tin ảnh/file ghi loại tin kèm mô tả, không tải về, và bot không trả lời chúng.
 """
@@ -35,6 +36,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import sys
 import time
 from typing import Any, Dict, List, Optional
@@ -48,6 +50,7 @@ NHIP = 20               # giây giữa hai lần đọc
 NHIP_LOI = 90           # nghỉ dài hơn khi một tài khoản vừa lỗi (MCP chết, chưa đăng nhập)
 LIMIT = 100             # tin mỗi lần đọc
 TEN_TTL = 300           # giây giữ bảng tên thread (zalo_list_threads) trước khi hỏi lại
+THU_LAI_TEN_GIAY = 15     # giây tối thiểu giữa hai lần làm mới CƯỠNG BỨC bảng (cuộc chat lạ), chống dồn dập
 MAX_TEN = 2000
 
 _task: Optional[asyncio.Task] = None
@@ -207,6 +210,25 @@ def _la_cua_minh(msg: dict) -> bool:
     return False
 
 
+def _chua_ro_loai(msg: dict, ten: dict) -> bool:
+    """Tin này không nói cuộc chat là nhóm hay chat riêng, và bảng cuộc chat cũng không biết.
+
+    `zalo_get_messages` không có `threadType` (ví dụ của MCP chỉ có id, threadId, text, from, ts),
+    nên loại cuộc chat chủ yếu đến từ bảng `zalo_list_threads`. Cuộc chat ngoài bảng mà cứ coi là
+    chat riêng thì một nhóm mới sẽ bị bot trả lời từng tin như chat riêng.
+    """
+    if not isinstance(msg, dict):
+        return False
+    thread = str(_lay(msg, "threadId", "thread_id", "chatId", mac_dinh="") or "").strip()
+    if not thread:
+        return False
+    if _lay(msg, "threadType", "thread_type", "type_thread", mac_dinh=None) is not None:
+        return False
+    if isinstance(msg.get("isGroup"), bool):
+        return False
+    return thread not in (ten or {})
+
+
 def _loai_tin(msg: dict) -> str:
     t = str(_lay(msg, "type", "msgType", "message_type", mac_dinh="text") or "text").lower()
     if t in conversations.LOAI_TIN:
@@ -263,18 +285,25 @@ def chuan_hoa_tin(conn: dict, msg: dict, ten: Dict[str, dict]) -> Optional[dict]
         "text": text,
         "external_message_id": str(_lay(msg, "id", "msgId", "message_id", mac_dinh="") or ""),
         "created_at": _ts(_lay(msg, "ts", "timestamp", "time", mac_dinh=0)),
-        "metadata": {k: msg.get(k) for k in ("replyTo", "mentions", "mediaUrl", "url", "fileName")
-                     if msg.get(k) not in (None, "")},
+        "metadata": dict({k: msg.get(k) for k in ("replyTo", "mentions", "mediaUrl", "url", "fileName")
+                          if msg.get(k) not in (None, "")},
+                         **({"chua_ro_loai": True} if _chua_ro_loai(msg, ten) else {})),
     }
 
 
 # ============================================================
 # Vòng đọc
 # ============================================================
-async def _nap_ten(conn: dict, tt: dict) -> Dict[str, dict]:
-    """Bảng threadId -> {name, type}. Hỏi lại sau TEN_TTL giây, hỏng thì giữ bảng cũ."""
-    if tt.get("ten") is not None and time.time() - float(tt.get("ten_ts") or 0) < TEN_TTL:
-        return tt["ten"]
+async def _nap_ten(conn: dict, tt: dict, cuong_buc: bool = False) -> Dict[str, dict]:
+    """Bảng threadId -> {name, type}. Hỏi lại sau TEN_TTL giây, hỏng thì giữ bảng cũ.
+
+    `cuong_buc`: hỏi lại NGAY dù chưa hết hạn (nhưng không dồn quá một lần mỗi `THU_LAI_TEN_GIAY`),
+    dùng khi có tin từ một cuộc chat chưa có trong bảng: nhóm nick vừa vào, khách mới nhắn.
+    """
+    if tt.get("ten") is not None:
+        tuoi = time.time() - float(tt.get("ten_ts") or 0)
+        if tuoi < TEN_TTL and not (cuong_buc and tuoi >= THU_LAI_TEN_GIAY):
+            return tt["ten"]
     try:
         d = await _goi(conn, "zalo_list_threads", {"limit": 200})
         ds = d.get("threads") if isinstance(d, dict) else d
@@ -309,12 +338,17 @@ async def doc_mot_lan(conn: dict) -> dict:
         d = {"messages": d if isinstance(d, list) else []}
     tin = d.get("messages") or []
     ten = await _nap_ten(conn, tt) if tin else (tt.get("ten") or {})
+    if tin and any(_chua_ro_loai(m, ten) for m in tin):
+        # Có cuộc chat lạ (nhóm nick vừa vào, khách mới nhắn): hỏi lại bảng ngay thay vì chờ hết
+        # hạn, không thì tin đầu tiên của nó bị nhận nhầm loại.
+        ten = await _nap_ten(conn, tt, cuong_buc=True)
     moi = trung = 0
     for m in tin:
         ev = chuan_hoa_tin(conn, m, ten)
         if not ev:
             continue
         if ev["sender_type"] == "human":
+            _hoc_danh_tinh(conn["id"], m)
             # Tin chủ gửi đi. Tiếng vọng của câu BOT vừa gửi thì bỏ (bot đã tự ghi câu đó vào
             # Hộp thư, ghi thêm lần nữa là hiện hai lần, lần hai mang nhãn "người thật"). Còn
             # lại là chủ tự tay nhắn: nhớ giờ để bot nhường cuộc chat đó.
@@ -322,6 +356,13 @@ async def doc_mot_lan(conn: dict) -> dict:
                 trung += 1
                 continue
             _TAY[(conn["id"], ev["external_chat_id"])] = float(ev.get("created_at") or time.time())
+        elif _la_tieng_vong(conn["id"], ev["external_chat_id"], ev["text"], TIENG_VONG_TOI_THIEU):
+            # Ví dụ trong tài liệu của MCP không có cờ "tin của chính mình", nên câu bot vừa gửi
+            # có thể quay về như tin của một KHÁCH. Để lọt thì trong nhóm bot sẽ tự trả lời chính
+            # nó, và Hộp thư ghi câu bot nói thành tin khách. Chỉ áp cho tin đủ dài: "Dạ" hay "ok"
+            # khách nói trùng câu bot vừa nói là chuyện thường, còn một đoạn dài y hệt thì là vọng.
+            trung += 1
+            continue
         kq = conversations.ghi_su_kien(ev)
         if kq.get("ok"):
             if kq.get("trung"):
@@ -410,11 +451,82 @@ TUOI_TOI_DA = 180       # giây: tin cũ hơn thế thì KHÔNG trả lời. L�
                         # còn cả những tin từ trước; trả lời chúng là dội lại câu hỏi của hôm qua.
 TAY_IM = 600            # giây bot im sau khi chủ TỰ TAY nhắn cuộc chat đó (chủ đang nói chuyện rồi)
 ECHO_TTL = 900          # giây nhớ câu bot vừa gửi để nhận ra tiếng vọng của nó ở vòng đọc
+TIENG_VONG_TOI_THIEU = 25   # tin của KHÁCH phải dài ít nhất chừng này chữ mới bị coi là tiếng vọng (xem doc_mot_lan)
+NHUONG_GIAY = 20        # giây bot chờ trước khi tự trả lời tin nhóm không ai gọi tên (chế độ Tự
+                        # đánh giá): nếu trong lúc đó có người nhắn tay bằng nick này thì nhường
 
 _BOTS: Dict[str, Any] = {}          # conn_id -> Transport đang trực
 _DA_GUI: Dict[tuple, list] = {}     # (conn_id, thread) -> [(ts, chữ đã chuẩn hoá)]
 _TAY: Dict[tuple, float] = {}       # (conn_id, thread) -> giờ tin chủ tự nhắn gần nhất
 _VIEC: set = set()                  # giữ tham chiếu task đang chạy, kẻo bị thu gom giữa chừng
+_ID_MINH: Dict[str, dict] = {}      # conn_id -> {"uid", "ten"} của CHÍNH nick này, học từ tin của nó
+
+
+def _hoc_danh_tinh(conn_id: str, msg: dict) -> None:
+    """Nhớ id + tên Zalo của CHÍNH nick này từ một tin nó gửi. Cần để biết một tin trong nhóm có
+    tag mình không (`mentions` chỉ có id, tag trong chữ chỉ có tên hiển thị). Tài liệu của MCP
+    không nói id của tài khoản đăng nhập nằm ở đâu, nên học từ tin đã có thay vì đoán.
+
+    Id học sai còn tệ hơn không có id: `Transport.xu_ly` bỏ qua mọi tin mang id đó, nên nếu ở chat
+    riêng `from` của tin mình gửi lại là id NGƯỜI KIA thì cả khách đó bị bỏ rơi. Hai lớp phòng:
+    id trùng id cuộc chat thì không phải của mình, và chỉ tin id khi MỌI tin của nick đều cho
+    đúng một giá trị (đổi qua đổi lại nghĩa là cờ "của mình" đang không đáng tin).
+    """
+    uid = str(_lay(msg, "from", "senderId", "sender_id", "uidFrom", mac_dinh="") or "").strip()
+    thread = str(_lay(msg, "threadId", "thread_id", "chatId", mac_dinh="") or "").strip()
+    ten = str(_lay(msg, "senderName", "sender_name", "fromName", "dName", mac_dinh="") or "").strip()
+    cu = _ID_MINH.setdefault(str(conn_id), {})
+    if uid and uid != thread:
+        thay = cu.setdefault("_da_thay", set())
+        thay.add(uid)
+        cu["uid"] = uid if len(thay) == 1 else ""
+    if ten:
+        cu["ten"] = ten
+
+
+def _chuan_ten(s: Any) -> str:
+    import chatbot_grounding
+    return " ".join(chatbot_grounding._bo_dau(str(s or "")).lower().split())
+
+
+def _ds(v: Any) -> list:
+    return list(v) if isinstance(v, (list, tuple)) else ([] if v in (None, "") else [v])
+
+
+def nhan_dien_goi(conn_id: str, ev: dict, ten_khac=()) -> tuple:
+    """(được tag, được reply) của một tin nhóm, theo nick `conn_id`.
+
+    Ba đường, vì khuôn dữ liệu của `zalo_get_messages` chưa được kiểm trên nhóm thật và ví dụ của
+    MCP chỉ có `mentions`/`replyTo` ở `zalo_get_history`:
+      - "@Tên" trong chữ, với tên là nhãn kết nối và tên hiển thị học được của nick;
+      - `mentions` chứa id của nick (chuỗi hoặc object có uid);
+      - `replyTo` trỏ về tin của nick (theo id hoặc theo tên người gửi).
+    KHÔNG dùng tên Agent/bot: "@Lan" trong nhóm thường là một thành viên tên Lan.
+    Không nhận ra thì cùng lắm chế độ Tự đánh giá vẫn bắt được câu hỏi thuộc tài liệu.
+    """
+    minh = _ID_MINH.get(str(conn_id)) or {}
+    uid = str(minh.get("uid") or "").strip()
+    ten = {_chuan_ten(x) for x in (list(ten_khac or ()) + [minh.get("ten")]) if x}
+    ten.discard("")
+    md = ev.get("metadata") or {}
+    text_n = _chuan_ten(ev.get("text"))
+    tag = any(re.search(r"@" + re.escape(t) + r"(?!\w)", text_n) for t in ten)
+    if not tag and uid:
+        for m in _ds(md.get("mentions")):
+            x = (_lay(m, "uid", "id", "userId", mac_dinh="") if isinstance(m, dict) else m)
+            if str(x).strip() == uid:
+                tag = True
+                break
+    rep = False
+    rt = md.get("replyTo")
+    if isinstance(rt, dict):
+        if uid and any(str(rt.get(k) or "").strip() == uid
+                       for k in ("uid", "uidFrom", "senderId", "from", "idTo", "userId")):
+            rep = True
+        else:
+            nguoi = _chuan_ten(_lay(rt, "senderName", "dName", "name", "fromName", mac_dinh=""))
+            rep = bool(nguoi) and nguoi in ten
+    return tag, rep
 
 
 def dang_ky_bot(conn_id: str, tb: Any) -> None:
@@ -448,7 +560,9 @@ def ghi_da_gui(conn_id: str, thread: str, text: str) -> None:
             _DA_GUI.pop(k, None)
 
 
-def _la_tieng_vong(conn_id: str, thread: str, text: str) -> bool:
+def _la_tieng_vong(conn_id: str, thread: str, text: str, toi_thieu: int = 0) -> bool:
+    if len(_chuan(text)) < toi_thieu:
+        return False
     khoa = (str(conn_id), str(thread))
     now = time.time()
     ds = [x for x in _DA_GUI.get(khoa, []) if now - x[0] < ECHO_TTL]

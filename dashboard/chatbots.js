@@ -300,7 +300,7 @@
         ' <b>' + esc(window.t("cb.rt_che_do")) + '</b> ' + esc(window.t("cb.rt_2")) +
         ' <b>' + esc(window.t("cb.rt_lenh")) + '</b> ' + esc(window.t("cb.rt_va")) +
         ' <b>' + esc(window.t("cb.rt_tra_thang")) + '</b>' +
-        esc(b.reply_when === "always" ? window.t("cb.rt_always") : window.t("cb.rt_mention")) + '.<br>' +
+        esc(b.reply_when === "always" || b.reply_when === "auto" ? window.t("cb.rt_always") : window.t("cb.rt_mention")) + '.<br>' +
         esc(window.t("cb.rt_fix_1")) + ' <b>@BotFather</b> ' + esc(window.t("cb.rt_go")) +
         ' <b>/setprivacy</b>' + esc(window.t("cb.rt_fix_2")) + ' <b>Disable</b>' +
         esc(window.t("cb.rt_fix_3")) + ' <b>' + esc(window.t("cb.rt_quan_tri")) + '</b>. ' +
@@ -333,7 +333,8 @@
         '<div class="cb-meta">' +
           '<span>' + esc(!coNhom(b) ? window.t("cb.chi_rieng") : (b.groups || []).length
             ? (window.t("cb.n_nhom", { count: b.groups.length }) + ", " +
-               (b.reply_when === "always" ? window.t("cb.tl_moi_tin") : window.t("cb.tl_goi_ten")))
+               (b.reply_when === "always" ? window.t("cb.tl_moi_tin")
+                : b.reply_when === "auto" ? window.t("cb.tl_tu_danh_gia") : window.t("cb.tl_goi_ten")))
             : window.t("cb.chi_rieng")) + '</span>' +
           '<span>' + esc(b.nguon_tra_loi === "tai_lieu" ? window.t("cb.nguon_tl_ngan")
                                                         : window.t("cb.nguon_ag_ngan")) + '</span>' +
@@ -739,16 +740,23 @@
                 esc(((b && b.groups) || []).join("\n")) + '</textarea>' +
               '<div class="cb-hint">' + esc(window.t("cb.hint_ho_3")) + ' <b>' +
               esc(window.t("cb.hint_nhom_rieng")) + '</b>' + esc(window.t("cb.hint_nhom_1")) +
-              ' <b>' + esc(window.t("cb.cho_phep")) + '</b>' + esc(window.t("cb.hint_nhom_2")) +
-              ' <b>/id</b> ' + esc(window.t("cb.hint_nhom_3")) + '</div>' +
+              ' <b>' + esc(window.t("cb.cho_phep")) + '</b>' +
+              // Lệnh /id chỉ có ở Telegram: bảo người dùng Zalo gõ nó là chỉ họ vào ngõ cụt.
+              '<span class="cb-chi-tg">' + esc(window.t("cb.hint_nhom_2")) +
+              ' <b>/id</b> ' + esc(window.t("cb.hint_nhom_3")) + '</span>' +
+              '<span class="cb-khong-tg" style="display:none">.</span></div>' +
 
               '<label>' + esc(window.t("cb.lb_reply_when")) + '</label>' +
               '<select id="cbReplyWhen">' +
-                '<option value="mention"' + (!b || b.reply_when !== "always" ? " selected" : "") + '>' +
+                '<option value="mention"' + (!b || (b.reply_when !== "always" && b.reply_when !== "auto") ? " selected" : "") + '>' +
                   esc(window.t("cb.rw_mention")) + '</option>' +
+                '<option value="auto"' + (b && b.reply_when === "auto" ? " selected" : "") + '>' +
+                  esc(window.t("cb.rw_auto")) + '</option>' +
                 '<option value="always"' + (b && b.reply_when === "always" ? " selected" : "") + '>' +
                   esc(window.t("cb.rw_always")) + '</option>' +
               '</select>' +
+              '<div class="cb-hint"><b>' + esc(window.t("cb.rw_tu_danh_gia")) + '</b> ' +
+              esc(window.t("cb.hint_rw_auto")) + '</div>' +
               '<div class="cb-hint"><b>' + esc(window.t("cb.rw_moi_tin")) + '</b> ' +
               esc(window.t("cb.hint_rw_1")) + '<b>/setprivacy</b> ' +
               esc(window.t("cb.hint_rw_2")) + '</div>' +
@@ -802,6 +810,9 @@
       var khong = box.querySelector("#cbKhongNhom");
       if (nhomBox) nhomBox.style.display = co ? "" : "none";
       if (khong) khong.style.display = co ? "none" : "";
+      var coTg = tkDangChon().some(function (a) { return a.channel === "telegram"; });
+      box.querySelectorAll(".cb-chi-tg").forEach(function (n) { n.style.display = coTg ? "" : "none"; });
+      box.querySelectorAll(".cb-khong-tg").forEach(function (n) { n.style.display = coTg ? "none" : ""; });
     }
 
     // Dòng tóm tắt ở đầu bước 2: bot này sẽ trả lời ở đâu, và lối quay lại đổi. Không có nó thì

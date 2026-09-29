@@ -279,6 +279,15 @@ check("CANARY: ô nhóm KHÔNG còn bị giấu sau form Sửa",
   !/\(sua \? '<label>Nhóm được phép/.test(CB) && /id="cbGroups"/.test(CB));
 check("form tạo cũng gửi nhóm lên server", /groups: gr, reply_when: rw/.test(CB));
 check("chọn được khi nào bot lên tiếng trong nhóm", /id="cbReplyWhen"/.test(CB));
+check("có lựa chọn Tự đánh giá (reply_when=auto) trong ô chọn khi nào bot lên tiếng",
+      /<option value="auto"/.test(CB) && /cb\.rw_auto/.test(CB));
+check("thẻ bot nêu đúng chế độ Tự đánh giá, không gộp vào 'khi được gọi tên'",
+      /reply_when === "auto"[\s\S]{0,80}cb\.tl_tu_danh_gia/.test(CB));
+check("gợi ý 'gõ /id trong nhóm' chỉ hiện khi có tài khoản Telegram (Zalo không có lệnh đó)",
+      /class="cb-chi-tg"/.test(CB) && /class="cb-khong-tg"/.test(CB) &&
+      /a\.channel === "telegram"[\s\S]{0,200}cb-chi-tg/.test(CB));
+check("lựa chọn 'được gọi tên' KHÔNG được chọn sẵn khi bot đang ở Tự đánh giá",
+      /b\.reply_when !== "always" && b\.reply_when !== "auto"/.test(CB));
 // Chế độ riêng tư của Telegram chặn Ở PHÍA TELEGRAM, trước khi Javis nhìn thấy tin nào. Đây là
 // nguyên nhân số một của "nhắn riêng thì được, trong nhóm tag tên thì im re", nên cảnh báo phải
 // hiện cho MỌI bot có dùng nhóm - không riêng bot đặt "trả lời mọi tin" như bản trước.

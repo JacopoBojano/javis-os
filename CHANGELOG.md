@@ -8,7 +8,7 @@ Lịch sử phiên bản Javis OS. Bản mới nhất ở trên cùng. Xem ngay 
 ### Thêm mới
 - **Bot trả lời được trong nhóm Zalo.** Nhóm đã cho phép: tag tên bot hoặc trả lời vào tin của bot là bot trả lời. Trước đây mọi tin nhóm đều bị bỏ qua nên tag cũng im.
 - **Chế độ "Tự đánh giá" trong cài đặt bot.** Không cần tag, bot tự xem tin có phải câu hỏi mà tài liệu của nó trả lời được không rồi mới lên tiếng. Các thành viên trò chuyện với nhau thì bot im.
-- Bot chờ một chút để nhường bạn, có giới hạn số lần tự trả lời mỗi giờ, và mọi tin bị bỏ qua đều có lý do trong nhật ký bot.
+- Bot chờ một chút để nhường bạn khi bạn đang tự nhắn, có giới hạn số lần tự trả lời mỗi giờ, và câu hỏi nào bot bỏ qua đều có lý do trong nhật ký để bạn bổ sung tài liệu.
 
 ## [0.64.81] - 2026-09-29
 ### Thêm mới

@@ -5,7 +5,9 @@ Gửi từ kênh này là gửi DƯỚI DANH TÍNH CHỦ (không phải bot), n�
 soạn tin; ngoài ra nó là một kênh như mọi kênh khác, không có mục riêng nào trên giao diện.
 
 Từ 0.64.80 kênh này gắn được Bot chuyên trách (lớp `Transport` cuối file). Bot tự trả lời và tự
-quyết có nên trả lời không; các rào nằm ở `Transport.xu_ly`.
+quyết có nên trả lời không; các rào nằm ở `Transport.xu_ly`. Từ 0.64.82 bot còn đứng được trong
+NHÓM đã cho phép: trả lời khi được tag/reply, hoặc (chế độ Tự đánh giá) khi tin là một câu hỏi
+mà tài liệu của bot trả lời được, xem `chatbot_tu_dong`.
 """
 from __future__ import annotations
 
@@ -17,7 +19,7 @@ from channels import KenhSpec
 
 SPEC = KenhSpec(
     id="zalo_personal", nhan="Zalo cá nhân", kind="account", logo="zalo", mau="#0068FF",
-    tom_tat="Tài khoản Zalo của chính bạn. Bot trực thì tự trả lời chat riêng dưới tên bạn.",
+    tom_tat="Tài khoản Zalo của chính bạn. Bot trực thì tự trả lời chat riêng và nhóm đã cho phép, dưới tên bạn.",
     nang_luc={"nhom": True, "gui_chu": True, "gui_file": False},
 )
 
@@ -64,10 +66,13 @@ class Transport:
     """
 
     def __init__(self, token, whitelist, answer_fn, command_fn=None, download_dir=None,
-                 commands=None, precheck_fn=None, event_fn=None, giau_trang_thai=True, **_):
+                 commands=None, precheck_fn=None, event_fn=None, giau_trang_thai=True,
+                 cfg_fn=None, **_):
         self.conn_id = str(token or "")
         self.answer_fn = answer_fn
         self.precheck_fn = precheck_fn
+        self.event_fn = event_fn        # tin dịch vụ của nhóm: ở đây chỉ dùng "thay_nhom"
+        self.cfg_fn = cfg_fn            # đọc cấu hình bot SỐNG (chế độ trả lời trong nhóm)
         self.account_id = self.conn_id
         self.status = "off"
         self.last_error = ""
@@ -112,46 +117,103 @@ class Transport:
             await asyncio.sleep(10)
 
     # ---- một tin khách ---------------------------------------------------------------
+    def _che_do_nhom(self) -> str:
+        try:
+            return str((self.cfg_fn() if self.cfg_fn else {}).get("reply_when") or "")
+        except Exception:
+            return ""
+
+    async def _bao_nhom(self, thread: str, ev: dict):
+        """Báo cho bộ giám sát THẤY một nhóm (có tin bất kỳ về từ đó) để nhóm chưa cho phép hiện
+        lên hàng chờ của thẻ bot, kèm nút Cho phép. Không thì chủ phải tự đi tìm id nhóm Zalo."""
+        if not self.event_fn:
+            return
+        try:
+            r = self.event_fn("thay_nhom", {"chat_id": thread,
+                                            "chat_title": str(ev.get("chat_title") or "")})
+            if asyncio.iscoroutine(r):
+                await r
+        except Exception as e:
+            print(f"[zalo-personal bot {self.conn_id}] báo nhóm lỗi: {e}", file=sys.stderr)
+
     async def xu_ly(self, ev: dict):
         """Quyết định có trả lời một tin khách không, và trả lời nếu có.
 
         Các rào, theo thứ tự rẻ tới đắt (cái nào chặn thì KHÔNG tốn một lượt model):
-          - chỉ chat RIÊNG dạng CHỮ (nhóm và ảnh/tiếng/file bỏ qua: chủ chưa giao việc đó);
+          - chỉ tin dạng CHỮ, ở chat riêng hoặc nhóm (ảnh/tiếng/file bỏ qua: chủ chưa giao việc đó);
           - tin cũ quá `TUOI_TOI_DA` bỏ qua (bộ đệm MCP lúc mới bật);
           - chủ vừa TỰ TAY nhắn cuộc chat này thì nhường;
-          - rồi tới các luật chung của bot (Tiếp quản, giới hạn tần suất) trong `answer_fn`;
+          - nhóm: phải được chủ cho phép (chưa thì im TUYỆT ĐỐI và hiện lên hàng chờ duyệt);
+          - chế độ Tự đánh giá, tin không ai gọi tên: giống câu hỏi không, rồi chờ `NHUONG_GIAY`
+            để nhường nếu có người nhắn tay trong lúc đó;
+          - rồi tới các luật chung của bot (Tiếp quản, hạn mức, tra tài liệu) trong `answer_fn`;
           - cuối cùng chính bot tự quyết: Agent viết `[IM_LANG]` nghĩa là không gửi gì.
+
+        Trong NHÓM bot KHÔNG bao giờ nói một câu cố định nào (như "em chưa được bật cho nhóm
+        này" của Telegram): nick này là người thật, câu đó khai với cả nhóm rằng đây là máy.
         """
+        import chatbot_tu_dong
         import zalo_personal_channel as zc
-        if ev.get("chat_type") != "private" or ev.get("message_type") != "text":
+        loai = ev.get("chat_type")
+        if loai not in ("private", "group") or ev.get("message_type") != "text":
             return
+        nhom = loai == "group"
         text = str(ev.get("text") or "").strip()
         thread = str(ev.get("external_chat_id") or "")
         if not text or not thread:
             return
+        # Không biết cuộc chat là nhóm hay chat riêng (đã hỏi lại bảng mà vẫn không thấy): KHÔNG trả
+        # lời. Đoán là chat riêng nghĩa là trả lời từng tin của một nhóm, dưới tên người thật.
+        if (ev.get("metadata") or {}).get("chua_ro_loai"):
+            return
+        # Tin do CHÍNH nick này gửi (id đã học từ tin của nó) không bao giờ là khách, kể cả khi MCP
+        # không gắn cờ "của mình": không thì bot tự trả lời chính nó.
+        minh = (zc._ID_MINH.get(self.conn_id) or {}).get("uid")
+        if minh and str(ev.get("sender_id") or "") == minh:
+            return
+        if nhom:
+            await self._bao_nhom(thread, ev)
         if time.time() - float(ev.get("created_at") or 0) > zc.TUOI_TOI_DA:
             return
         if zc.chu_vua_nhan_tay(self.conn_id, thread):
             return
         meta = {
-            "chat_id": thread, "chat_type": "private", "chat_title": "",
-            "user_id": str(ev.get("sender_id") or thread),
+            "chat_id": thread, "chat_type": "group" if nhom else "private",
+            "chat_title": str(ev.get("chat_title") or "") if nhom else "",
+            # Trong nhóm id NGƯỜI gửi khác id nhóm: hạn mức và Hộp thư khoá theo người.
+            "user_id": str(ev.get("sender_id") or ("" if nhom else thread)),
             "user_name": str(ev.get("sender_name") or ""), "username": "",
             "message_id": str(ev.get("external_message_id") or ""),
             "account_id": self.conn_id,
         }
-        khoa = self._khoa.setdefault(thread, asyncio.Lock())
-        async with khoa:
-            try:
-                if self.precheck_fn:
-                    r = self.precheck_fn(text, meta)
-                    if asyncio.iscoroutine(r):
-                        r = await r
-                    if r is not None:           # {} = im, {"reply": ...} = một câu cố định
-                        cau = str((r or {}).get("reply") or "").strip()
-                        if cau:
-                            await self._gui(thread, cau)
-                        return
+        duoc_goi = False
+        if nhom:
+            conn = zc.ket_noi_theo_id(self.conn_id) or {}
+            tag, rep = zc.nhan_dien_goi(self.conn_id, ev, (conn.get("label") or "",))
+            meta["mentioned"], meta["reply_to_bot"] = tag, rep
+            duoc_goi = tag or rep
+        try:
+            if self.precheck_fn:
+                r = self.precheck_fn(text, meta)
+                if asyncio.iscoroutine(r):
+                    r = await r
+                if r is not None:           # {} = im, {"reply": ...} = một câu cố định
+                    cau = str((r or {}).get("reply") or "").strip()
+                    if cau and not nhom:
+                        await self._gui(thread, cau, "private")
+                    return
+            if nhom and not duoc_goi and self._che_do_nhom() == "auto":
+                if not chatbot_tu_dong.nhin_nhu_cau_hoi(text)[0]:
+                    return
+                # Chờ TRƯỚC khi cầm khoá cuộc chat: khoá là của các lượt được tag, đừng bắt chúng
+                # xếp hàng sau một lượt đang ngủ.
+                await asyncio.sleep(zc.NHUONG_GIAY)
+                if zc.chu_vua_nhan_tay(self.conn_id, thread):
+                    return
+                if zc._BOTS.get(self.conn_id) is not self:
+                    return      # bot bị tắt lúc đang chờ: nút Tắt phải có tác dụng ngay
+            khoa = self._khoa.setdefault(thread, asyncio.Lock())
+            async with khoa:
                 out = await self.answer_fn(text, meta, None)
                 if isinstance(out, dict):
                     if out.get("im_lang"):
@@ -159,20 +221,20 @@ class Transport:
                     cau = str(out.get("text") or "").strip()
                 else:
                     cau = str(out or "").strip()
-                if cau:
-                    await self._gui(thread, cau)
-            except asyncio.CancelledError:
-                raise
-            except Exception as e:
-                self.last_error = f"{type(e).__name__}: {e}"[:300]
-                print(f"[zalo-personal bot {self.conn_id}] lượt hỏng: {self.last_error}",
-                      file=sys.stderr)
+                if cau and zc._BOTS.get(self.conn_id) is self:
+                    await self._gui(thread, cau, loai)
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            self.last_error = f"{type(e).__name__}: {e}"[:300]
+            print(f"[zalo-personal bot {self.conn_id}] lượt hỏng: {self.last_error}",
+                  file=sys.stderr)
 
-    async def _gui(self, thread: str, cau: str):
+    async def _gui(self, thread: str, cau: str, chat_type: str = "private"):
         import zalo_personal_channel as zc
         # Nhớ TRƯỚC khi gửi: tiếng vọng có thể về vòng đọc ngay trong nhịp kế tiếp.
         zc.ghi_da_gui(self.conn_id, thread, cau)
-        ok, loi = await gui({"id": self.conn_id}, thread, cau, "private")
+        ok, loi = await gui({"id": self.conn_id}, thread, cau, chat_type)
         if not ok:
             self.last_error = f"Gửi Zalo lỗi: {loi}"[:300]
             print(f"[zalo-personal bot {self.conn_id}] {self.last_error}", file=sys.stderr)
