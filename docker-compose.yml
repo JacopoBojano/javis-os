@@ -42,14 +42,14 @@ services:
       # Cổng MÁY CHỦ lấy từ biến (trong container vẫn luôn là 7777). Bản thứ hai đặt
       # JAVIS_HOST_PORT=7778 là hết đụng cổng.
       #
-      # JAVIS_BIND = địa chỉ nghe trên máy chủ. Mặc định 0.0.0.0 (y như trước: mở ra Internet, vào
-      # được bằng http://<ip>:<cổng>). Chạy sau proxy chung thì đặt JAVIS_BIND=127.0.0.1 để chỉ
-      # proxy vào được, còn cổng này thành lối gỡ rối qua SSH tunnel.
+      # JAVIS_BIND = địa chỉ nghe trên máy chủ. Mặc định 127.0.0.1 để chỉ PC này truy cập được.
+      # Muốn truy cập từ máy khác phải cấu hình rõ ràng và bật xác thực trước. Chạy sau proxy chung
+      # thì đặt JAVIS_BIND=127.0.0.1 để chỉ proxy vào được; cổng này cũng dùng cho SSH tunnel.
       #
       # Vì sao là BIẾN chứ không phải một dòng ports trong file override: compose NỐI CHỒNG danh
       # sách ports của các file -f chứ không thay thế, nên khai lại ở override là ra hai binding
       # cùng một cổng và Docker báo "port is already allocated".
-      - "${JAVIS_BIND:-0.0.0.0}:${JAVIS_HOST_PORT:-7777}:7777"
+      - "${JAVIS_BIND:-127.0.0.1}:${JAVIS_HOST_PORT:-7777}:7777"
     volumes:
       - javis-data:/data                       # state: settings/mật khẩu/sessions/loop (có secret → KHÔNG git)
       - javis-brains:/brains                   # MỌI second brain (kiến thức của bạn) - bền qua mọi update

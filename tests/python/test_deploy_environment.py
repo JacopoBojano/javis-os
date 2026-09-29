@@ -24,6 +24,12 @@ def compose(name):
 
 
 hostinger = compose("docker-compose.hostinger.yml")["services"]["javis"]
+local_compose = compose("docker-compose.yml")["services"]["javis"]
+check(
+    "Docker lega la porta a loopback per default",
+    any(str(port).startswith("${JAVIS_BIND:-127.0.0.1}:")
+        for port in (local_compose.get("ports") or [])),
+)
 hostinger_env = set((hostinger.get("environment") or {}).keys())
 # WATCHTOWER_TOKEN nằm trong khối này (app cần đọc để gọi Watchtower) nhưng ĐÓNG CỨNG chứ
 # không lấy từ `${...}`, nên nó KHÔNG đẻ thêm ô nhập trong Docker Manager. Đó là chỗ phân biệt

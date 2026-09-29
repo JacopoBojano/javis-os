@@ -86,6 +86,13 @@ check(
     f"[hiện {len(_claude_md):,} ký tự ~{_tok(len(_claude_md)):,} token, "
     f"còn {KERNEL_MAX_CHARS - len(_claude_md):,} ký tự]",
 )
+check(
+    "provider e autonomia personale sono limitati dal contratto aggiornato",
+    "Groq Free is optional for low-risk background work" in _claude_md
+    and "Ask for confirmation immediately before external side effects" in _claude_md
+    and "Loops default to `mode: auto`" in _claude_md
+    and "never delegated automatically; Javis now acts on its own" not in _claude_md,
+)
 
 # Mục "Dev conventions" đã ĐẨY RA NGOÀI ngày 2026-09-22 (đúng cách file này dặn: chạm trần thì
 # cắt thật hoặc đẩy một mục ra, đừng nâng số). Nó chỉ dành cho phiên Claude Code sửa repo, còn

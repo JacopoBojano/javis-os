@@ -117,7 +117,7 @@ curl -fsSLO https://raw.githubusercontent.com/blogminhquy/javis-os/main/docker-c
 docker compose run --rm javis claude auth login --claudeai   # đăng nhập Claude 1 lần
 docker compose up -d                                          # pull image + chạy
 ```
-Mở `http://<ip-vps>:7777` → màn tạo tài khoản admin: đặt tên đăng nhập + mật khẩu (tối thiểu 8 ký tự), làm ngay sau khi chạy vì ai mở link trước sẽ tạo được admin (hoặc đặt sẵn `JAVIS_ADMIN_USER` + `JAVIS_ADMIN_PASSWORD` trong env). Vào được rồi thì bật 2FA.
+Mặc định, Docker chỉ mở dashboard trên chính máy chạy nó: `http://localhost:7777`. Nếu muốn truy cập từ máy khác, hãy đặt `JAVIS_BIND=0.0.0.0`, `JAVIS_ADMIN_USER` và `JAVIS_ADMIN_PASSWORD` trong `.env` **trước khi khởi động**, rồi bảo vệ kết nối bằng HTTPS và bật 2FA. Nếu chưa cấu hình tunnel hoặc proxy HTTPS, hãy giữ bind cục bộ.
 
 ### Cách 3 - Cài trực tiếp lên Linux/macOS (không Docker)
 
