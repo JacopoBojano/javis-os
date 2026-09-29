@@ -4,6 +4,12 @@ Lịch sử phiên bản Javis OS. Bản mới nhất ở trên cùng. Xem ngay 
 
 Định dạng: mỗi phiên bản là một khối `## [x.y.z] - ngày`, bên dưới nhóm thay đổi theo `### Thêm mới / Sửa lỗi / Cải thiện / Bảo mật`.
 
+## [0.64.82] - 2026-09-29
+### Thêm mới
+- **Bot trả lời được trong nhóm Zalo.** Nhóm đã cho phép: tag tên bot hoặc trả lời vào tin của bot là bot trả lời. Trước đây mọi tin nhóm đều bị bỏ qua nên tag cũng im.
+- **Chế độ "Tự đánh giá" trong cài đặt bot.** Không cần tag, bot tự xem tin có phải câu hỏi mà tài liệu của nó trả lời được không rồi mới lên tiếng. Các thành viên trò chuyện với nhau thì bot im.
+- Bot chờ một chút để nhường bạn, có giới hạn số lần tự trả lời mỗi giờ, và mọi tin bị bỏ qua đều có lý do trong nhật ký bot.
+
 ## [0.64.81] - 2026-09-29
 ### Thêm mới
 - **Gõ `/` trong khung chat giờ có 12 lệnh hệ thống**, chạy giống nhau ở mọi bộ não. `/status` cho biết đang dùng model nào, `/model` đổi model, `/usage` xem token đã dùng, `/tasks` xem việc nền, `/memory` xem bộ nhớ, `/export` tải hội thoại về, cùng `/help`, `/brain`, `/retry`.
