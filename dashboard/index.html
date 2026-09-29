@@ -854,6 +854,9 @@
   <script src="/static/chat-ask.js?v=2"></script>
   <script src="/static/limit-resume.js?v=1"></script>
   <script src="/static/chat-slash.js?v=3"></script>
+  <!-- Lệnh "/" hệ thống (/status /model /compact /plan /goal ...): chạy lệnh mà chat-slash.js vừa nhận
+       diện. Phải nạp TRƯỚC app.js (sendMessage gọi window.JavisLenh) và SAU chat-slash.js (đọc menu). -->
+  <script src="/static/chat-lenh.js?v=1"></script>
   <script src="/static/chat-acts.js?v=2"></script>
   <script src="/static/chat-marks.js?v=3"></script>
   <!-- Khối tiến trình từng bước trong khung chat: phải đứng TRƯỚC app.js vì app.js gọi

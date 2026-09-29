@@ -142,6 +142,7 @@ import ollama_local             # dò/tải/gỡ model trên máy chạy Ollama
 import sessions                  # PROJECT_INSTRUCTIONS_MAX cho khối project trong system prompt
 from sessions import get_store   # kho phiên hội thoại (sqlite + fts5): list/resume/search
 import compaction   # nén hội thoại dài cho engine API (tóm tắt phần cũ thay vì cắt bỏ)
+import lenh_he_thong   # lõi dùng chung của lệnh "/" hệ thống (web + Telegram): /plan /compact /usage...
 from chat_runtime import ChatRuntime
 import ui_bridge   # tool javis_ui bảo dashboard mở trang/file/việc rồi đợi trình duyệt đáp
 import ui_targets   # đổi lời nói ("mở trang công cụ") thành id trang dashboard hiểu
@@ -5148,12 +5149,18 @@ def _khoi_coding(row) -> str:
     return ""
 
 
-def _muc_quyen_luot_chat(row) -> str:
+def _muc_quyen_luot_chat(row, user_message="") -> str:
     """Mức quyền của lượt: phiên coding lấy theo chip trên trang, còn lại giữ `full` như cũ.
 
     Khung chat thường xưa nay chạy `full` (mặc định của `_apply_mcp`); đổi mặc định đó ở đây
     là âm thầm siết mọi cuộc trò chuyện đang có.
+
+    Ngoại lệ DUY NHẤT theo từng lượt: tin mở đầu bằng khối `/plan` thì lượt đó chỉ được đọc và
+    đề xuất (`suggest`), hub chặn mọi hành động ra ngoài. `suggest` là mức chặt nhất trong ba mức
+    (suggest < auto < full) nên `/plan` chỉ có thể SIẾT một lượt, không bao giờ nới quyền.
     """
+    if lenh_he_thong.la_luot_ke_hoach(user_message):
+        return "suggest"
     try:
         sid = (row or {}).get("id") or ""
         if sid and str((row or {}).get("channel") or "").startswith("coding:"):
@@ -12943,7 +12950,7 @@ async def websocket_endpoint(ws: WebSocket):
                     "grok-cli", actual_model or "", kind)
                 kcli = grok_cli.GrokCLI(cwd=_cwd_luot_chat(_row0, brain), model=actual_model,
                                         tag=turn_tag, instructions=sysprompt)
-                kcli.mode = _muc_quyen_luot_chat(_row0)
+                kcli.mode = _muc_quyen_luot_chat(_row0, user_message)
                 # Hub trỏ BRAIN kể cả khi cwd là repo: MCP, cron và nhắc hẹn thuộc bộ não của
                 # người dùng, không thuộc cây mã nguồn đang mở.
                 _apply_grok_hub(kcli, _brain_root(brain))
@@ -13033,7 +13040,7 @@ async def websocket_endpoint(ws: WebSocket):
                     "antigravity-cli", actual_model or "", kind)
                 acli = antigravity_cli.AntigravityCLI(cwd=_cwd_luot_chat(_row0, brain), model=actual_model,
                                                       tag=turn_tag, instructions=sysprompt)
-                acli.mode = _muc_quyen_luot_chat(_row0)
+                acli.mode = _muc_quyen_luot_chat(_row0, user_message)
                 # Hub trỏ BRAIN kể cả khi cwd là repo - xem chú thích ở nhánh Grok.
                 _apply_antigravity_hub(acli, _brain_root(brain))
                 if not acli.is_available():
@@ -13568,7 +13575,7 @@ async def websocket_endpoint(ws: WebSocket):
                 cli.system_prompt = sysprompt
                 # mode: `full` cho mọi phiên như xưa nay; riêng phiên coding lấy theo chip Mức
                 # quyền của trang đó, vì ở trang ấy người dùng CHỌN mức chứ không thừa kế.
-                _apply_mcp(cli, mode=_muc_quyen_luot_chat(_row0), brain=brain)   # gắn MCP do Javis quản lý (nhiều shop POSCake...)
+                _apply_mcp(cli, mode=_muc_quyen_luot_chat(_row0, user_message), brain=brain)   # gắn MCP do Javis quản lý (nhiều shop POSCake...)
                 _streamed = ""      # phần đã stream - phương án dự phòng khi luồng đứt trước 'final'
                 _cli_sid = None
                 _cost = None
@@ -18055,6 +18062,10 @@ async def _tg_help_text(brain):
         "/cli - engine Claude (có MCP/skill)\n"
         "/or - engine OpenRouter (chat + MCP đa-model)\n"
         "/retry - gửi lại câu gần nhất\n"
+        "/usage - token và chi phí Javis đã dùng\n"
+        "/tasks - việc nền đang chạy, xếp hàng, bị kẹt\n"
+        "/memory - mục lục bộ nhớ dài hạn của brain\n"
+        "/plan <việc> - chỉ lập kế hoạch, chưa làm gì ra ngoài\n"
         "/reset - hội thoại mới · /stop - dừng\n\n"
         "Gửi tin thường để hỏi Javis. ChatGPT/Codex và OpenRouter đều dùng được MCP của Javis.\n"
         "Gõ /tên-skill để gọi skill (cần engine Claude CLI).\n"
@@ -18437,6 +18448,28 @@ async def _tg_command(cmd, arg, chat=None, meta=None):
             return {"reply": f"✅ Model Claude: {a.lower()}. Nếu CLI chưa hỗ trợ tên này, query sẽ báo lỗi."}
         # Không tham số → mở menu nút bấm (chọn provider → chọn model, phân trang)
         return {"reply": _model_header(), "reply_markup": await _model_provider_kb()}
+    if cmd == "usage":
+        try:
+            _or = await _openrouter_credits(cfgmod.read_settings().get("model", {}) or {})
+        except Exception:
+            _or = None    # số dư là phần thêm: hỏng thì vẫn in số Javis tự đo
+        return {"reply": lenh_he_thong.dinh_dang_muc_dung(usage_store.summary(), _or)}
+    if cmd in ("tasks", "viec"):
+        try:
+            _view = await asyncio.to_thread(tasks_feature.board_view, brain)
+        except Exception as _e:
+            return {"reply": f"⚠ Không đọc được bảng việc: {type(_e).__name__}."}
+        return {"reply": lenh_he_thong.dinh_dang_viec(_view)}
+    if cmd == "memory":
+        _bn = await asyncio.to_thread(_doc_muc_luc_bo_nho, brain, 3000)
+        return {"reply": lenh_he_thong.dinh_dang_bo_nho(_bn["text"])}
+    if cmd == "plan":
+        # Cùng khối chỉ dẫn với web (lenh_he_thong.khoi_ke_hoach). Ở Telegram chỉ có lời dặn, chưa
+        # có cổng chặn ở hub: lượt Telegram chưa mang mức quyền riêng từng lượt.
+        if not arg.strip():
+            return {"reply": "Gõ /plan kèm việc cần lên kế hoạch, ví dụ: /plan dọn lại kho hàng "
+                             "cuối tháng. Javis chỉ đọc và đề xuất, chưa làm gì ra ngoài."}
+        return {"ask": lenh_he_thong.khoi_ke_hoach() + arg.strip()}
     if cmd == "agents":
         ags = agents_index(brain, kem_prompt=False)   # lệnh này chỉ in tên + vai trò
         busy = _tg_chat_busy(chat_key)
@@ -19182,6 +19215,109 @@ async def telegram_send_file(payload: dict = Body(...)):
         except Exception:
             pass
     return {"ok": ok, "error": err}
+
+
+# ============================================================
+# Lệnh "/" hệ thống của khung chat web (0.64.81): /compact /status /memory /plan /goal.
+# Lõi dùng chung với Telegram nằm ở lenh_he_thong.py; phần dưới chỉ là lớp HTTP mỏng.
+# Đặt SAU route cuối cùng có chủ ý: tests/python/route_table.json giữ thứ tự đăng ký route, nên
+# thêm route ở giữa file làm dịch số thứ tự của mọi route đứng sau, và xung đột với mọi PR khác
+# cũng đụng bảng đó.
+# ============================================================
+
+@app.post("/sessions/{session_id}/compact")
+async def sessions_compact(session_id: str):
+    """`/compact` trong khung chat: nén hội thoại NGAY, không đợi ngưỡng tự động.
+
+    Cách nén tuỳ bộ não của phiên (engine API gấp vào tóm tắt, engine gói thuê bao xoay mạch
+    native) - xem `lenh_he_thong.nen_phien`. Từ chối khi phiên đang trả lời: nén giữa chừng là
+    đổi lịch sử ngay dưới chân một lượt đang đọc nó.
+    """
+    st = get_store()
+    row = st.get_session(session_id)
+    if not row:
+        return JSONResponse({"error": "phiên không tồn tại"}, status_code=404)
+    if _CHAT_RUNTIME.get_job(session_id):
+        return JSONResponse({"error": "phiên đang trả lời", "ly_do": "dang_chay"}, status_code=409)
+    mcfg = cfgmod.read_settings().get("model", {})
+    prov, kind, api_key, api_model = _chat_provider_for_session(mcfg, row)
+    res = await lenh_he_thong.nen_phien(
+        st, session_id, kind=kind, prov=prov, api_key=api_key, model=api_model,
+        api_stream=_api_stream)
+    res["provider"] = prov
+    res["model"] = api_model or ""
+    return res
+
+
+@app.get("/slash/status")
+async def slash_status(session_id: str = Query(""), brain: str = Query("brain")):
+    """`/status` trong khung chat: engine + model THẬT của phiên, brain, và phiên có đang chạy không.
+
+    Một endpoint gộp thay vì để trình duyệt tự ráp từ /settings + /sessions/{id}/meta: ở đây
+    mới có `_chat_provider_for_session`, tức đúng luật server dùng để CHẠY lượt kế tiếp (ghim
+    hỏng thì rơi về mặc định chung). Ráp phía client là hai nơi nói hai chuyện khác nhau.
+    """
+    mcfg = cfgmod.read_settings().get("model", {})
+    row = get_store().get_session(session_id) if session_id else None
+    prov, kind, _key, model = _chat_provider_for_session(mcfg, row or {})
+    d = _provider_def(prov) or {}
+    return {
+        "provider": prov, "provider_label": d.get("label") or prov, "kind": kind,
+        "model": model or "",
+        "pinned": bool((row or {}).get("pinned_provider")),
+        "brain": Path(_brain_root(brain)).name,
+        "session_id": session_id or "",
+        "msg_count": int((row or {}).get("msg_count") or 0),
+        "last_input_tokens": int((row or {}).get("last_input_tokens") or 0),
+        "compact_count": int((row or {}).get("compact_count") or 0),
+        "running": bool(session_id and _CHAT_RUNTIME.get_job(session_id)),
+        "version": _app_version(),
+    }
+
+
+def _doc_muc_luc_bo_nho(brain: str, toi_da: int = 20000) -> dict:
+    """Mục lục bộ nhớ dài hạn của brain: `memory/MEMORY.md` + số file chi tiết trong `facts/`.
+
+    Chữ thường `memory/` là cố ý (Linux coi `Memory/` là thư mục khác mà Javis không bao giờ
+    mở - xem CLAUDE.md, mục Long-term memory).
+    """
+    root = Path(_brain_root(brain))
+    f = root / "memory" / "MEMORY.md"
+    try:
+        text = f.read_text(encoding="utf-8", errors="replace") if f.is_file() else ""
+    except OSError:
+        text = ""
+    try:
+        so_fact = sum(1 for _ in (root / "memory" / "facts").glob("*.md"))
+    except OSError:
+        so_fact = 0
+    return {"text": text[:toi_da], "cat_bot": len(text) > toi_da, "facts": so_fact,
+            "path": "memory/MEMORY.md", "brain": root.name}
+
+
+@app.get("/slash/memory")
+async def slash_memory(brain: str = Query("brain")):
+    """`/memory` trong khung chat: mục lục bộ nhớ dài hạn của brain đang chọn."""
+    return await asyncio.to_thread(_doc_muc_luc_bo_nho, brain)
+
+
+@app.post("/slash/block")
+async def slash_block(kind: str = Form(...), dk: str = Form(""), vong: int = Form(1),
+                      toi_da: int = Form(8)):
+    """Khối chỉ dẫn của `/plan` và `/goal` cho khung chat web.
+
+    Máy chủ là nguồn DUY NHẤT của chữ trong khối (Telegram dùng chung `lenh_he_thong`): trình
+    duyệt xin ở đây chứ không chép chữ sang JS, kẻo hai bản lệch nhau mà không test nào thấy.
+    """
+    if kind == "plan":
+        return {"block": lenh_he_thong.khoi_ke_hoach()}
+    if kind == "goal":
+        if not (dk or "").strip():
+            return JSONResponse({"error": "thiếu điều kiện của mục tiêu"}, status_code=400)
+        toi_da = max(1, min(int(toi_da), 20))
+        vong = max(1, min(int(vong), toi_da))
+        return {"block": lenh_he_thong.khoi_muc_tieu(dk, vong, toi_da)}
+    return JSONResponse({"error": "kind phải là plan hoặc goal"}, status_code=400)
 
 
 @app.on_event("startup")

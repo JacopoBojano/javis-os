@@ -1295,6 +1295,14 @@ li.task-done > .dv-ttext { text-decoration: line-through; text-decoration-color:
   text-align: center; color: var(--text3); font-size: 12px; font-family: var(--font);
   padding: 2px 12px; opacity: 0.85;
 }
+/* Trả lời của lệnh "/" hệ thống (/status, /usage, /tasks...). Nền nhạt, chữ nhỏ hơn và viền
+   trái màu nhấn: nhìn ra ngay đây là KẾT QUẢ LỆNH của giao diện chứ không phải lời của model. */
+.msg-lenh .bubble {
+  background: var(--surface-2); border-left: 3px solid var(--accent);
+  border-radius: 3px 8px 8px 3px; padding: 10px 14px;
+  font-size: 14.5px; line-height: 1.6;
+}
+.msg-lenh .bubble ul { margin: 4px 0; padding-left: 20px; }
 @keyframes spin { to { transform: rotate(360deg); } }   /* vẫn dùng cho .rs-spin */
 
 .mem-count {

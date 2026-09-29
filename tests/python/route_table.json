@@ -3618,5 +3618,45 @@
    "POST"
   ],
   "trong": null
+ },
+ {
+  "order": 364,
+  "type": "APIRoute",
+  "path": "/sessions/{session_id}/compact",
+  "name": "sessions_compact",
+  "methods": [
+   "POST"
+  ],
+  "trong": null
+ },
+ {
+  "order": 365,
+  "type": "APIRoute",
+  "path": "/slash/status",
+  "name": "slash_status",
+  "methods": [
+   "GET"
+  ],
+  "trong": null
+ },
+ {
+  "order": 366,
+  "type": "APIRoute",
+  "path": "/slash/memory",
+  "name": "slash_memory",
+  "methods": [
+   "GET"
+  ],
+  "trong": null
+ },
+ {
+  "order": 367,
+  "type": "APIRoute",
+  "path": "/slash/block",
+  "name": "slash_block",
+  "methods": [
+   "POST"
+  ],
+  "trong": null
  }
 ]
