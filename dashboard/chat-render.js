@@ -856,22 +856,20 @@
     setTimeout(function () { URL.revokeObjectURL(url); a.remove(); }, 400);
   }
 
-  // ---- mermaid: lazy-load, offline thi suy giam thanh ma nguon ----
+  // ---- mermaid: solo asset locali verificati; altrimenti mostra il sorgente ----
   var mmState = 0, mmQueue = [], mmSeq = 0;   // 0 chua nap, 1 dang nap, 2 san sang, 3 hong
   function loadMermaid(cb) {
     if (mmState === 2) return cb(true);
     if (mmState === 3) return cb(false);
-    mmQueue.push(cb);
-    if (mmState === 1) return;
-    mmState = 1;
-    var s = document.createElement("script");
-    s.src = "https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js";
-    s.onload = function () {
+    if (window.mermaid) {
       try { window.mermaid.initialize({ startOnLoad: false, theme: "dark", securityLevel: "strict" }); } catch (e) {}
-      mmState = 2; var q = mmQueue; mmQueue = []; q.forEach(function (c) { c(true); });
-    };
-    s.onerror = function () { mmState = 3; var q = mmQueue; mmQueue = []; q.forEach(function (c) { c(false); }); };
-    document.head.appendChild(s);
+      mmState = 2;
+      return cb(true);
+    }
+    // Non inserire script remoti nel contesto autenticato della dashboard. Finche Mermaid
+    // non viene fornito come asset locale con hash verificato, il renderer degrada al testo.
+    mmState = 3;
+    return cb(false);
   }
   function renderMermaid(code, host) {
     if (!host) return;

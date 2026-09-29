@@ -57,12 +57,12 @@ RUN ln -sf /usr/local/lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
 # `--build-arg WITH_BROWSER_DEPS=0` khi ai đó muốn ảnh gọn nhất có thể.
 ARG WITH_BROWSER_DEPS=1
 RUN if [ "$WITH_BROWSER_DEPS" = "1" ]; then \
-        npx -y playwright@latest install-deps chromium \
+        npx -y playwright@1.55.0 install-deps chromium \
         && rm -rf /var/lib/apt/lists/* /root/.npm; \
     fi
 
 # The brain: Claude Code CLI, installed globally. Overridable build-arg.
-ARG CLAUDE_CLI_VERSION=latest
+ARG CLAUDE_CLI_VERSION=2.1.284
 RUN npm install -g "@anthropic-ai/claude-code@${CLAUDE_CLI_VERSION}" \
     && npm cache clean --force \
     && claude --version
@@ -76,7 +76,7 @@ RUN npm install -g "@anthropic-ai/claude-code@${CLAUDE_CLI_VERSION}" \
 # codex thì build phải ĐỎ để CI chặn lại, không được ship image què.
 # CI resolves latest to a concrete version before building: a new CLI version
 # changes this layer's cache key even when the Dockerfile itself is unchanged.
-ARG CODEX_CLI_VERSION=0.153.4
+ARG CODEX_CLI_VERSION=0.158.0
 RUN npm install -g @openai/codex@${CODEX_CLI_VERSION} && npm cache clean --force && codex --version
 
 # Gemini CLI KHÔNG còn được cài sẵn (bỏ ở 0.29.1).
@@ -118,17 +118,11 @@ ENV JAVIS_HOST=0.0.0.0 \
 # Codex (ChatGPT) bọc mọi lệnh đọc/ghi file của nó bằng bubblewrap. Bubblewrap cần tạo được user
 # namespace + đổi propagation của `/`, mà container này chạy user thường, không có CAP_SYS_ADMIN,
 # và Ubuntu 24.04 còn chặn user namespace không đặc quyền bằng AppArmor. Nên Ở ĐÂY rào đó không
-# phải "chặt hơn" mà là "chết hẳn": mọi việc nền chạy bằng ChatGPT đều trả
-# `bwrap: Failed to make / slave: Permission denied` cho TỪNG lệnh một, và loop không đọc nổi
-# một file nào (chủ repo báo 2026-08-07 kèm ảnh). Tắt rào riêng của Codex, để CHÍNH CONTAINER
-# làm rào.
-#
-# Đánh đổi phải nói rõ: Codex không có allowlist per-call như Claude, nên với cờ này thì loop
-# mức `suggest` chạy bằng Codex không còn thứ gì chặn nó ghi file trong container. Các rào về
-# tiền/đơn/đăng bài/gửi tin KHÔNG bị ảnh hưởng - chúng nằm ở MCP Hub chứ không ở sandbox.
-# Muốn bật lại rào: đặt JAVIS_CODEX_SANDBOX=auto và cấp quyền cho container (vd
-# `security_opt: [apparmor:unconfined]`) để bubblewrap khởi động được.
-ENV JAVIS_CODEX_SANDBOX=off
+# Bubblewrap puo non avviarsi in alcuni container privi di user namespace/CAP_SYS_ADMIN.
+# Il comportamento sicuro e fallire chiuso: non disattivare automaticamente la sandbox.
+# Chi gestisce un container gia isolato puo scegliere consapevolmente
+# JAVIS_CODEX_SANDBOX=off, ma il default resta protetto.
+ENV JAVIS_CODEX_SANDBOX=auto
 
 USER javis
 

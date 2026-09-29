@@ -32,6 +32,18 @@ import fnmatch
 # vượt hạn mức đúng lúc model trả lời dài, mà đó lại là lúc khó tái hiện nhất.
 KNOWN_LIMITS: tuple[dict, ...] = (
     {
+        "id": "groq-free-gpt-oss-20b",
+        "provider": "groq",
+        "model_pattern": "*gpt-oss-20b*",
+        "rolling_tpm": 8000,
+        "context_window": 131072,
+        "reserved_output_tokens": 2000,
+        "window_seconds": 60,
+        "note": "Profilo conservativo sotto il limite Free pubblico di Groq.",
+        "source": "Groq Free Plan rate limits, verificato 2026-09-29",
+        "verify": True,
+    },
+    {
         "id": "groq-free-llama-3.3-70b",
         "provider": "groq",
         "model_pattern": "llama-3.3-70b*",

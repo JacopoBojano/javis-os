@@ -100,11 +100,11 @@ os.environ.pop("JAVIS_CODEX_SANDBOX", None)
 
 # ---- 3. Ảnh Docker phải THẬT SỰ tắt rào, không thì bản vá chỉ nằm trên giấy ----
 DOCKERFILE = (ROOT / "Dockerfile").read_text(encoding="utf-8")
-check("Dockerfile đặt JAVIS_CODEX_SANDBOX=off", "ENV JAVIS_CODEX_SANDBOX=off" in DOCKERFILE)
+check("Dockerfile mantiene la sandbox Codex attiva", "ENV JAVIS_CODEX_SANDBOX=auto" in DOCKERFILE)
 check("Dockerfile nói rõ vì sao (bubblewrap không chạy nổi trong container)",
       "bubblewrap" in DOCKERFILE and "CAP_SYS_ADMIN" in DOCKERFILE)
 check("Dockerfile nói rõ ĐÁNH ĐỔI, không lặng lẽ hạ rào",
-      "suggest" in DOCKERFILE and "MCP Hub" in DOCKERFILE)
+      "fallire chiuso" in DOCKERFILE and "JAVIS_CODEX_SANDBOX=off" in DOCKERFILE)
 # Chú thích phải nằm NGOÀI khối ENV nối dòng: chen vào giữa các dòng nối bằng "\" là trò may
 # rủi theo phiên bản trình dựng, mà hỏng Dockerfile thì VPS không cập nhật được nữa.
 _khoi_env = DOCKERFILE[DOCKERFILE.index("ENV JAVIS_HOST"):DOCKERFILE.index("ENV JAVIS_CODEX_SANDBOX")]

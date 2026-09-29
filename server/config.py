@@ -165,7 +165,8 @@ _DEFAULT = {
                               "claude-opus-4-8", "claude-sonnet-4-6", "claude-haiku-4-5"],
             "openai": ["gpt-4o", "gpt-4o-mini", "o3-mini"],                        # OpenAI API
             "gemini": ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.0-flash"],  # Google Gemini API (picker load động)
-            "groq": ["llama-3.3-70b-versatile", "qwen3-32b", "openai/gpt-oss-120b"],  # Groq (picker load động)
+            "groq": ["openai/gpt-oss-20b", "openai/gpt-oss-120b",
+                     "llama-3.3-70b-versatile", "qwen/qwen3.8-27b"],  # Groq (picker load động)
             # Không ghim model Codex: /provider/models lấy catalog LIVE bằng
             # codex app-server model/list và nhớ lại lần thành công gần nhất.
             "openai-oauth": [],
@@ -850,17 +851,15 @@ def auth_enabled(cfg=None):
 def require_login():
     """Có BẮT BUỘC đăng nhập để dùng Javis không (kể cả khi CHƯA đặt mật khẩu → ép setup).
     - JAVIS_REQUIRE_LOGIN=1/0 ép bật/tắt tường minh.
-    - Mặc định: BẬT khi server nghe public (JAVIS_HOST=0.0.0.0, vd Docker/Hostinger/VPS) -
-      vì Claude chạy full quyền, không được để hở ai cũng vào được."""
+    - Mặc định: BẬT ở mọi bind, kể cả loopback. Un processo locale o una pagina web nel
+      browser non devono ricevere accesso amministrativo solo perche il server e localhost.
+      JAVIS_REQUIRE_LOGIN=0 resta disponibile soltanto per test/dev espliciti."""
     v = os.getenv("JAVIS_REQUIRE_LOGIN", "").strip().lower()
     if v in ("1", "true", "yes", "on"):
         return True
     if v in ("0", "false", "no", "off"):
         return False
-    # FAIL-CLOSED: bind KHÔNG phải loopback (0.0.0.0, ::, IP LAN…) → coi là public → bắt buộc login.
-    # Chỉ tắt khi nghe thuần localhost. (Localhost + tunnel: đặt JAVIS_REQUIRE_LOGIN=1.)
-    host = os.getenv("JAVIS_HOST", "127.0.0.1").strip().lower()
-    return host not in ("127.0.0.1", "localhost", "::1")
+    return True
 
 
 def gate_active():
@@ -1040,6 +1039,10 @@ SESSIONS = _load_sessions()
 def _save_sessions():
     try:
         _SESS_PATH.write_text(json.dumps(SESSIONS), encoding="utf-8")
+        try:
+            os.chmod(_SESS_PATH, 0o600)
+        except Exception:
+            pass
     except Exception:
         pass
 

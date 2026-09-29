@@ -34,6 +34,7 @@ import tempfile
 from pathlib import Path
 
 os.environ["JAVIS_STATE_DIR"] = tempfile.mkdtemp(prefix="javis-3db-")
+os.environ["BRAINS_DIR"] = tempfile.mkdtemp(prefix="javis-3db-brains-")
 
 from fastapi import WebSocketDisconnect  # noqa: E402
 
@@ -72,6 +73,7 @@ main._CAPABILITY_REGISTRY.refresh_tools(str(BRAIN), [], {})
 class _WS:
     """Gửi một tin rồi ở lại nghe tới khi lượt chốt, giữ mọi gói máy chủ bắn ra."""
     cookies = {}
+    headers = {"host": "localhost:7777", "origin": "http://localhost:7777"}
 
     def __init__(self, payload):
         self._p = json.dumps(payload)

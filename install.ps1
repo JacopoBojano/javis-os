@@ -101,8 +101,8 @@ if ($SkipCli) {
   }
   if (Have "npm") {
     foreach ($it in @(
-      @{ pkg = "@anthropic-ai/claude-code"; bin = "claude"; ten = "Claude Code" },
-      @{ pkg = "@openai/codex"; bin = "codex"; ten = "Codex - goi ChatGPT" }
+      @{ pkg = "@anthropic-ai/claude-code@2.1.284"; bin = "claude"; ten = "Claude Code" },
+      @{ pkg = "@openai/codex@0.158.0"; bin = "codex"; ten = "Codex - goi ChatGPT" }
     )) {
       if (Have $it.bin) { Ok "$($it.ten): da co san"; continue }
       Line "    $($it.ten): dang cai (npm install -g $($it.pkg))..."
@@ -114,22 +114,15 @@ if ($SkipCli) {
     Warn "Chua co Node.js nen bo qua Claude Code + Codex. Cai Node LTS o nodejs.org roi chay lai file nay."
   }
 
-  # agy va grok KHONG cai bang npm: moi nha mot script cai rieng. Best-effort tung cai -
-  # mot cai hong khong duoc chan ba cai con lai.
+  # agy va grok pubblicano installer remoti. Non scaricarli ed eseguirli alla cieca nel
+  # profilo dell'utente: restano componenti opzionali da installare manualmente dopo aver
+  # verificato versione e firma/hash del pacchetto scelto.
   foreach ($it in @(
-    @{ bin = "agy"; ten = "Antigravity CLI (Google)"; url = "https://antigravity.google/cli/install.ps1" },
-    @{ bin = "grok"; ten = "Grok Build (xAI)"; url = "https://x.ai/cli/install.ps1" }
+    @{ bin = "agy"; ten = "Antigravity CLI (Google)" },
+    @{ bin = "grok"; ten = "Grok Build (xAI)" }
   )) {
     if (Have $it.bin) { Ok "$($it.ten): da co san"; continue }
-    Line "    $($it.ten): dang cai tu $($it.url) ..."
-    try {
-      $sc = (Invoke-RestMethod -Uri $it.url -UseBasicParsing -TimeoutSec 60)
-      Invoke-Expression $sc
-      Refresh-Path
-      if (Have $it.bin) { Ok "$($it.ten)" } else { Warn "$($it.ten): script chay xong nhung chua thay binary. Mo PowerShell moi roi thu: irm $($it.url) | iex" }
-    } catch {
-      Warn "$($it.ten) cai chua duoc ($($_.Exception.Message)). Cai tay: irm $($it.url) | iex"
-    }
+    Warn "$($it.ten): bo qua cai tu dong; cai mot ban da xac minh neu that su can."
   }
 }
 

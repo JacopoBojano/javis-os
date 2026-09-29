@@ -25,6 +25,7 @@ import re
 import sys
 import threading
 import time
+import tempfile
 
 import terminal  # noqa: E402
 
@@ -51,8 +52,8 @@ _than = _ws.group(0) if _ws else ""
 
 check("có endpoint WebSocket /ws/terminal", bool(_than))
 check("WS terminal đòi ĐÚNG session đăng nhập như /ws",
-      "cfgmod.gate_active()" in _than and "cfgmod.valid_session" in _than
-      and "javis_session" in _than)
+      "_websocket_guard(ws)" in _than
+      and "cfgmod.valid_session" in SRC and "javis_session" in SRC)
 check("CANARY: WS terminal KHÔNG nhận token API (_token_ok là đường của script, không phải shell)",
       "_token_ok" not in _than)
 check("WS terminal tôn trọng công tắc tắt JAVIS_TERMINAL", "terminal.bat()" in _than)
@@ -71,7 +72,10 @@ check("rời tab chỉ GỠ NGƯỜI XEM, không giết shell",
 _cu = os.environ.get("JAVIS_TERMINAL")
 try:
     os.environ.pop("JAVIS_TERMINAL", None)
-    check("mặc định terminal BẬT", terminal.bat() is True)
+    check("mặc định terminal TẮT", terminal.bat() is False)
+    for v in ("1", "on", "true", "yes", "ON"):
+        os.environ["JAVIS_TERMINAL"] = v
+        check(f"JAVIS_TERMINAL={v} -> bật", terminal.bat() is True)
     for v in ("0", "off", "false", "no", "OFF"):
         os.environ["JAVIS_TERMINAL"] = v
         check(f"JAVIS_TERMINAL={v} -> tắt", terminal.bat() is False)
@@ -134,7 +138,8 @@ async def _doc(q, dieu_kien, giay=6.0):
 
 async def _phien_that():
     loop = asyncio.get_running_loop()
-    p = terminal.KHO.mo("", "/tmp", 100, 30, loop)
+    cwd_test = tempfile.gettempdir()
+    p = terminal.KHO.mo("", cwd_test, 100, 30, loop)
     q = p.gan()
     p.go("echo KQ=$((6*7))\n")
     buf = await _doc(q, lambda b: "KQ=42" in b)
@@ -155,7 +160,7 @@ async def _phien_that():
     # Nối lại: y như đổi trang rồi quay về tab Code.
     p.go_ra(q)
     check("gỡ người xem KHÔNG giết shell", p.song())
-    p2 = terminal.KHO.mo(p.id, "/tmp", 100, 30, asyncio.get_running_loop())
+    p2 = terminal.KHO.mo(p.id, cwd_test, 100, 30, asyncio.get_running_loop())
     check("mo() với id cũ trả về ĐÚNG phiên cũ", p2 is p)
     q2 = p2.gan()
     dau = await asyncio.wait_for(q2.get(), timeout=2)
@@ -171,12 +176,12 @@ async def _phien_that():
         if len([x for x in terminal.KHO._phien.values() if x.song()]) >= terminal.MAX_PHIEN:
             break
         try:
-            them.append(terminal.KHO.mo("", "/tmp", 80, 24, asyncio.get_running_loop()))
+            them.append(terminal.KHO.mo("", cwd_test, 80, 24, asyncio.get_running_loop()))
         except RuntimeError:
             break
     tran = False
     try:
-        terminal.KHO.mo("", "/tmp", 80, 24, asyncio.get_running_loop())
+        terminal.KHO.mo("", cwd_test, 80, 24, asyncio.get_running_loop())
     except RuntimeError:
         tran = True
     check(f"quá {terminal.MAX_PHIEN} phiên thì từ chối kèm lời giải thích", tran)
@@ -197,20 +202,15 @@ async def _phien_that():
         terminal.KHO.don()
         check("phiên không ai xem quá lâu bị dọn", terminal.KHO.lay(moc.id) is None)
 
-    pids = [x.proc.pid for x in terminal.KHO._phien.values() if x.song()]
+    processi = [x.proc for x in terminal.KHO._phien.values() if x.song()]
     terminal.KHO.dong_het()
     await asyncio.sleep(1.2)
     check("dong_het() đóng sạch kho", terminal.KHO.danh_sach() == [])
-    con_song = [pid for pid in pids if _con_song(pid)]
+    # Su Windows os.kill(pid, 0) non e una pura verifica di esistenza come su POSIX:
+    # passa da TerminateProcess e puo segnalare vivo un oggetto gia in uscita. Popen.poll()
+    # interroga invece il processo che abbiamo effettivamente creato senza modificarlo.
+    con_song = [p.pid for p in processi if p.poll() is None]
     check("đóng phiên thì tiến trình shell chết thật, không mồ côi", not con_song, con_song)
-
-
-def _con_song(pid):
-    try:
-        os.kill(pid, 0)
-        return True
-    except OSError:
-        return False
 
 
 asyncio.run(_phien_that())
@@ -227,7 +227,7 @@ async def _dong_khong_treo_loop():
     hệ: (1) dong() trả về ngay, không làm việc chặn nào trên loop; (2) mọi cú os.close(master)
     chỉ xảy ra khi shell ĐÃ CHẾT hoặc thread đọc ĐÃ THOÁT."""
     loop = asyncio.get_running_loop()
-    p = terminal.Phien("test-dong-an-toan", "/tmp", 80, 24, loop)
+    p = terminal.Phien("test-dong-an-toan", tempfile.gettempdir(), 80, 24, loop)
     q = p.gan()
     p.go("echo SAN_SANG=1\n")
     await _doc(q, lambda b: "SAN_SANG=1" in b)  # shell ở prompt -> thread đọc đang kẹt os.read
@@ -277,7 +277,7 @@ async def _go_khong_chan_loop():
     (1) go() trả về ngay cả khi shell không đọc stdin; (2) hàng ghi đầy thì go() bỏ gói chứ
     không chặn; (3) đóng phiên đang kẹt ghi thì thread ghi tự thoát, không rò thread."""
     loop = asyncio.get_running_loop()
-    p = terminal.Phien("test-go-an-toan", "/tmp", 80, 24, loop)
+    p = terminal.Phien("test-go-an-toan", tempfile.gettempdir(), 80, 24, loop)
     q = p.gan()
     # Biến foreground thành tiến trình KHÔNG BAO GIỜ đọc stdin. Marker viết dạng tính toán
     # (N$((...)) -> N1337) để không khớp nhầm với dòng tty echo lại chính lệnh vừa gõ.
@@ -340,7 +340,7 @@ async def _ma_thoat_khong_tren_loop():
     _het() rỗng - tức là nó còn phải tự đi chờ trên loop. Đo giờ trên CI là mời flaky vào
     nhà, còn bất biến cấu trúc này thì đúng ở mọi tốc độ máy."""
     loop = asyncio.get_running_loop()
-    p = terminal.Phien("test-wait-thread", "/tmp", 80, 24, loop)
+    p = terminal.Phien("test-wait-thread", tempfile.gettempdir(), 80, 24, loop)
     q = p.gan()
     goc = p._het
     goi = []
@@ -371,7 +371,7 @@ async def _nhanh_ong():
     try:
         check("ép CO_PTY=False -> che_do() báo 'ong'", terminal.che_do() == "ong")
         loop = asyncio.get_running_loop()
-        p = terminal.Phien("test-ong", "/tmp", 80, 24, loop)
+        p = terminal.Phien("test-ong", tempfile.gettempdir(), 80, 24, loop)
         check("phiên ống mở được", p.song() and p.che_do == "ong")
         q = p.gan()
         p.go("echo ONG=$((3*5))\n")

@@ -49,6 +49,7 @@ class _WSGia:
     """Giống _WSGia của test_luot_chat_codex: ở lại nghe tới khi lượt chốt rồi mới ngắt."""
 
     cookies = {}
+    headers = {"host": "localhost:7777", "origin": "http://localhost:7777"}
 
     def __init__(self, payload):
         self._payload = json.dumps(payload)

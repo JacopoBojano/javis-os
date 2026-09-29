@@ -2,8 +2,8 @@
 
     python tests/run.py files_root
 
-KHÔNG mạng. Phủ: localhost mở tới ổ đĩa (out được ra root), public khoá brain,
-JAVIS_FILES_ROOT override, _safe_path chặn vượt trần, điểm vào mặc định = brain,
+KHÔNG mạng. Phủ: localhost e public chiusi nel brain per default,
+JAVIS_FILES_ROOT override esplicito, _safe_path chặn vượt trần, điểm vào mặc định = brain,
 parent=None khi ở trần (ẩn nút Lên).
 """
 from _paths import ROOT, SERVER  # noqa: E402,F401  - nạp server/ vào sys.path (xem tests/python/_paths.py)
@@ -56,13 +56,15 @@ def _set_env(host=None, files_root=None):
 
 
 try:
-    # ---- 1. Localhost (mặc định): trần = ổ đĩa, out được ra root ----
+    # ---- 1. Localhost (mặc định): login + trần brain, fail-closed ----
     _set_env(host="127.0.0.1")
-    check("localhost: require_login False", cfgmod.require_login() is False)
-    check("localhost: trần = ổ đĩa chứa brain", main._files_ceiling("brain") == _ANCHOR)
-    rel_ngoai = main._files_rel(_ANCHOR, _TMP / "ngoai-vault.txt")   # tương đối so với TRẦN (ổ đĩa)
-    p = main._safe_path("brain", rel_ngoai)
-    check("localhost: đọc được file NGOÀI brain (trong ổ đĩa)", p == _TMP / "ngoai-vault.txt")
+    check("localhost: require_login True", cfgmod.require_login() is True)
+    check("localhost: trần = brain", main._files_ceiling("brain") == BRAIN)
+    try:
+        main._safe_path("brain", "../ngoai-vault.txt")
+        check("localhost: chặn file NGOÀI brain", False)
+    except ValueError:
+        check("localhost: chặn file NGOÀI brain", True)
 
     # ---- 2. Public bind: khoá trong brain (fail-closed) ----
     _set_env(host="0.0.0.0")
@@ -85,19 +87,16 @@ try:
     check("env=path sai: fallback về brain", main._files_ceiling("brain") == BRAIN)
 
     # ---- 4. files_list: điểm vào mặc định = brain, parent/home đúng ----
-    _set_env(host="127.0.0.1")   # trần = ổ đĩa
+    _set_env(host="127.0.0.1")   # trần = brain
 
     async def _list(path_arg):
         return await main.files_list(brain="brain", path=path_arg)
 
     d0 = asyncio.run(_list(None))   # None = mặc định
-    check("list(None) = BRAIN (không phải ổ đĩa)", d0["path"] == main._files_rel(_ANCHOR, BRAIN)
+    check("list(None) = BRAIN", d0["path"] == ""
           and any(i["name"] == "note.md" for i in d0["items"]))
-    check("list: home trỏ brain", d0["home"] == main._files_rel(_ANCHOR, BRAIN))
-    check("list: parent brain = thư mục cha (Lên được)", d0["parent"] == main._files_rel(_ANCHOR, BRAIN.parent))
-
-    d_up = asyncio.run(_list(d0["parent"]))   # Lên 1 cấp
-    check("list: lên 1 cấp thấy folder brain", any(i["name"] == "My Vault" for i in d_up["items"]))
+    check("list: home trỏ brain", d0["home"] == "")
+    check("list: parent brain = None", d0["parent"] is None)
 
     d_ceil = asyncio.run(_list(""))   # "" = trần (ổ đĩa)
     check("list(''): ở trần → parent=None (ẩn nút Lên)", d_ceil["parent"] is None)
@@ -161,7 +160,7 @@ try:
     (BRAIN / "01 - Daily" / "2026-07-30.md").write_text("nhật ký hôm nay", encoding="utf-8")
     (BRAIN / "attachments").mkdir(exist_ok=True)
     (BRAIN / "attachments" / "anh.png").write_bytes(b"\x89PNG\r\n\x1a\n" + b"0" * 64)
-    brain_rel = main._files_rel(_ANCHOR, BRAIN)
+    brain_rel = ""
 
     probe = asyncio.run(main.files_zip(brain="brain", path=brain_rel, probe=1))
     check("zip probe: đếm đủ file (kể cả trong thư mục con)",
@@ -192,7 +191,7 @@ try:
     finally:
         main._ZIP_MAX_FILES = _old_max
 
-    not_dir = asyncio.run(main.files_zip(brain="brain", path=brain_rel + "/note.md", probe=0))
+    not_dir = asyncio.run(main.files_zip(brain="brain", path="note.md", probe=0))
     check("zip: trỏ vào file lẻ → 404 'Không phải thư mục'",
           hasattr(not_dir, "status_code") and not_dir.status_code == 404)
 
@@ -218,7 +217,7 @@ try:
     async def _del(path_arg):
         return await main.files_delete(brain="brain", path=path_arg)
 
-    r = asyncio.run(_del(main._files_rel(_ANCHOR, BRAIN)))
+    r = asyncio.run(_del(""))
     check("không xoá được brain root", hasattr(r, "status_code") and r.status_code == 400)
 finally:
     main._brain_root = _orig_brain_root

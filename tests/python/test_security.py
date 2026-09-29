@@ -44,7 +44,7 @@ try:
     os.environ["JAVIS_HOST"] = "0.0.0.0"
     check("public bind → bắt buộc login", cfg.require_login() is True)
     os.environ["JAVIS_HOST"] = "127.0.0.1"
-    check("localhost bind → không ép login", cfg.require_login() is False)
+    check("localhost bind → vẫn bắt buộc login", cfg.require_login() is True)
     os.environ["JAVIS_HOST"] = "192.168.1.50"
     check("LAN IP bind → bắt buộc login", cfg.require_login() is True)
     os.environ["JAVIS_REQUIRE_LOGIN"] = "0"
@@ -111,6 +111,18 @@ check("mode suggest ép readonly (chặn write dù perm full)",
 check("mode auto trần safe (chặn danger dù perm full)",
       mcp_catalog.allowed(conn, "full", "auto", "delete_order")[0] is False)
 
+# Chat normale e override Codex devono partire chiusi. Il livello ``full`` resta possibile
+# soltanto quando una sessione Coding lo richiede esplicitamente dal selettore dei permessi.
+check("chat normale parte in modalità suggest",
+      main._muc_quyen_luot_chat({}, "scrivi una nota") == "suggest")
+_codex_cfg = [f'{mcp_hub.CODEX_MODE_KEY}="full"']
+mcp_hub.dat_codex_mode(_codex_cfg, "suggest")
+check("override Codex sostituisce full con suggest per il singolo processo",
+      _codex_cfg == [f'{mcp_hub.CODEX_MODE_KEY}="suggest"'])
+mcp_hub.dat_codex_mode(_codex_cfg, "valore-invalido")
+check("override Codex non valido fallisce chiuso su suggest",
+      _codex_cfg == [f'{mcp_hub.CODEX_MODE_KEY}="suggest"'])
+
 # ---- 8. Chống path traversal trong vault ----
 base = tempfile.mkdtemp(prefix="javis-vault-")
 ok_path = mcp_hub._safe_path(base, "notes/report.md")
@@ -140,6 +152,44 @@ check("no-auth + host IP → cho qua",
       web_security.csrf_decision("GET", "192.168.1.9:7777", None, False) is None)
 check("đã bật auth + host lạ → cho qua (không khoá nhầm deploy)",
       web_security.csrf_decision("GET", "some-domain.com", None, True) is None)
+
+# WebSocket không đi qua middleware HTTP: phải có rào Origin/Host riêng, fail-closed.
+check("WebSocket cùng-origin localhost → cho qua",
+      web_security.websocket_decision("localhost:7777", "http://localhost:7777") is None)
+check("WebSocket từ trang web lạ tới localhost → chặn",
+      (web_security.websocket_decision("localhost:7777", "https://evil.example") or (0,))[0] == 403)
+check("WebSocket browser thiếu Origin → chặn",
+      (web_security.websocket_decision("localhost:7777", None) or (0,))[0] == 403)
+check("WebSocket DNS rebinding cùng Origin/Host lạ → chặn",
+      (web_security.websocket_decision("evil.example", "https://evil.example") or (0,))[0] == 403)
+check("WebSocket Host méo → chặn",
+      (web_security.websocket_decision("localhost:7777/bad", "http://localhost:7777") or (0,))[0] == 400)
+
+# Verifica il guard usato dalle tre route, non soltanto la funzione pura Origin/Host.
+import asyncio  # noqa: E402
+
+
+class _WsGuardFake:
+    def __init__(self, origin="http://localhost:7777", token=""):
+        self.headers = {"host": "localhost:7777", "origin": origin}
+        self.cookies = {"javis_session": token} if token else {}
+        self.closed = None
+
+    async def close(self, code=None, reason=None):
+        self.closed = (code, reason)
+
+
+_ws_anon = _WsGuardFake()
+check("WebSocket anonimo respinto prima dell'accept",
+      asyncio.run(main._websocket_guard(_ws_anon)) is False
+      and _ws_anon.closed and _ws_anon.closed[0] == 1008)
+_ws_auth = _WsGuardFake(token=cfg.new_session())
+check("WebSocket same-origin con sessione valida ammesso",
+      asyncio.run(main._websocket_guard(_ws_auth)) is True and _ws_auth.closed is None)
+_ws_cross = _WsGuardFake(origin="https://evil.example", token=cfg.new_session())
+check("WebSocket cross-origin respinto anche con sessione valida",
+      asyncio.run(main._websocket_guard(_ws_cross)) is False
+      and _ws_cross.closed and _ws_cross.closed[0] == 1008)
 
 # ---- 10. Rào _AUTH_LOCAL_EXACT: /reminders/cancel phải được miễn đăng nhập localhost ----
 # Lỗi Important vừa vá: _AUTH_LOCAL_EXACT trước đây chỉ có ("/telegram/send-file", "/reminders"),
@@ -212,6 +262,27 @@ for _p in web_security.SIDE_EFFECT_GET:
     check(f"SIDE_EFFECT_GET '{_p}' trỏ đúng một route GET có thật", _p in _get_routes)
 check("middleware _csrf_guard có thật sự gọi navigation_decision",
       "navigation_decision" in inspect.getsource(main._csrf_guard))
+
+# La dashboard autenticata non deve eseguire JavaScript preso al volo da un CDN. Un CDN
+# compromesso avrebbe gli stessi privilegi della UI e potrebbe leggere note e sessione.
+_dashboard_js = "\n".join(
+    p.read_text(encoding="utf-8", errors="ignore")
+    for p in (ROOT / "dashboard").glob("*.js")
+)
+check("dashboard senza JavaScript remoto da jsDelivr/unpkg",
+      "cdn.jsdelivr.net" not in _dashboard_js and "unpkg.com" not in _dashboard_js)
+
+_installer_text = "\n".join(
+    (ROOT / name).read_text(encoding="utf-8", errors="ignore")
+    for name in ("install.ps1", "setup.bat", "install.sh")
+)
+check("installer senza esecuzione diretta di script remoti",
+      "Invoke-Expression" not in _installer_text
+      and "| iex" not in _installer_text.lower()
+      and not __import__("re").search(r"curl[^\n|]*\|\s*(?:bash|sh)\b", _installer_text))
+check("CLI npm fissate a versioni esatte",
+      "@anthropic-ai/claude-code@2.1.284" in _installer_text
+      and "@openai/codex@0.158.0" in _installer_text)
 
 print()
 if _fails:

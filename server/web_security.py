@@ -191,3 +191,28 @@ def csrf_decision(method: str, host_header: str, origin_header, gate_active: boo
             if host not in allowed:
                 return 403, "host không được phép"
     return None
+
+
+def websocket_decision(host_header: str, origin_header):
+    """Valida l'handshake WebSocket prima di ``accept()``.
+
+    I middleware HTTP di Starlette non proteggono i WebSocket. Un browser aperto su un sito
+    ostile puo quindi provare a collegarsi a ``ws://127.0.0.1`` anche quando il servizio non e
+    esposto in rete. Per i canali browser di Javis l'Origin e obbligatorio e deve coincidere
+    con l'Host richiesto oppure appartenere all'allowlist esplicita.
+
+    Anche l'Host deve essere locale/IP oppure configurato esplicitamente. Questo secondo
+    controllo impedisce il DNS rebinding in cui Origin e Host coincidono su un dominio ostile.
+    """
+    if not host_hop_le(host_header):
+        return 400, "host header non valido"
+    host = host_only(host_header)
+    origin = host_only(origin_header)
+    if not host or not origin:
+        return 403, "origine WebSocket mancante"
+    allowed = allowed_web_hosts()
+    if not _is_ip(host) and host not in allowed:
+        return 403, "host WebSocket non consentito"
+    if origin != host and origin not in allowed:
+        return 403, "origine WebSocket non consentita"
+    return None

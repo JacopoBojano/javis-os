@@ -70,9 +70,13 @@ def kill_tree(pid: int) -> bool:
     """
     if os.name == "nt":
         try:
-            subprocess.run(["taskkill", "/F", "/T", "/PID", str(pid)],
-                           capture_output=True, timeout=10, creationflags=no_window())
-            return True
+            risultato = subprocess.run(["taskkill", "/F", "/T", "/PID", str(pid)],
+                                        capture_output=True, timeout=10,
+                                        creationflags=no_window())
+            # taskkill restituisce normalmente anche quando il comando fallisce: senza
+            # controllare il codice, il chiamante crede che l'albero sia chiuso e salta il
+            # fallback sul processo diretto. Succede, per esempio, con accesso negato.
+            return risultato.returncode == 0
         except Exception:
             return False
     try:

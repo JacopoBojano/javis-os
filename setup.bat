@@ -54,14 +54,13 @@ if errorlevel 1 (
   echo     [!] Chua co Node.js nen bo qua buoc nay.
   echo         Muon dung Claude Code hay Codex: cai Node LTS o nodejs.org roi chay lai file nay.
 ) else (
-  call :cai_cli @anthropic-ai/claude-code claude "Claude Code"
-  call :cai_cli @openai/codex codex "Codex - goi ChatGPT"
+  call :cai_cli @anthropic-ai/claude-code@2.1.284 claude "Claude Code"
+  call :cai_cli @openai/codex@0.158.0 codex "Codex - goi ChatGPT"
 )
-REM Hai engine con lai KHONG cai bang npm: moi nha mot script rieng. Best-effort, va KHONG
-REM bao "cai hong" khi khong thay binary - PATH cua cua so cmd nay khong tu cap nhat sau khi
-REM script cai ghi vao registry, nen "chua thay" o day khong co nghia la chua cai duoc.
-call :cai_script agy "Antigravity CLI cua Google" https://antigravity.google/cli/install.ps1
-call :cai_script grok "Grok Build cua xAI" https://x.ai/cli/install.ps1
+REM Antigravity va Grok dung installer tai tu mang. Ban fork ca nhan khong tu dong chay
+REM script chua duoc ghim version va hash; hai engine nay la tuy chon va duoc bo qua.
+echo     - Antigravity CLI: bo qua cai tu dong an toan
+echo     - Grok Build: bo qua cai tu dong an toan
 
 REM Giai phong port 7777 neu dang bi chiem
 echo [4/4] Giai phong port 7777...
@@ -105,22 +104,5 @@ if errorlevel 1 (
   echo       [!] Chua cai duoc. Cai tay khi ranh: npm install -g %1
 ) else (
   echo       OK
-)
-goto :eof
-
-REM %1 = ten binary, %2 = ten hien thi, %3 = URL script cai cua nha cung cap.
-REM Cung luat dat ten nhu :cai_cli - ten hien thi KHONG duoc chua dau ngoac don.
-:cai_script
-where %1 >nul 2>&1
-if not errorlevel 1 (
-  echo     - %~2: da co san
-  goto :eof
-)
-echo     - %~2: dang cai tu %3 ...
-powershell -NoProfile -ExecutionPolicy Bypass -Command "try { irm %3 -UseBasicParsing | iex } catch { exit 1 }" >nul 2>&1
-if errorlevel 1 (
-  echo       [!] Chua cai duoc. Cai tay: irm %3 ^| iex
-) else (
-  echo       Da chay script cai. Neu trang Models van bao chua cai thi khoi dong lai Javis.
 )
 goto :eof

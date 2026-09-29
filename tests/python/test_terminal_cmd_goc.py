@@ -18,6 +18,8 @@ import sys
 import tempfile
 from pathlib import Path
 
+os.environ.setdefault("JAVIS_STATE_DIR", tempfile.mkdtemp(prefix="javis-terminal-root-"))
+
 try:
     sys.stdout.reconfigure(encoding="utf-8")
 except Exception:
@@ -50,15 +52,28 @@ finally:
         os.environ["JAVIS_TERMINAL_CWD"] = cu
 
 # ---- 2. PATH của shell được bù ngăn ~/.local/bin ----
-lb = Path.home() / ".local" / "bin"
-lb.mkdir(parents=True, exist_ok=True)   # tồn tại là điều kiện để được bù
-env = terminal._env()
-parts = env.get("PATH", "").split(os.pathsep)
-check("CANARY: ~/.local/bin nằm trong PATH của terminal (gõ `agy` là thấy lệnh)",
-      str(lb) in parts)
-check("không nhân đôi ngăn đã có", parts.count(str(lb)) == 1)
-env2 = terminal._env()
-check("gọi lại vẫn không phình PATH", env2.get("PATH", "").split(os.pathsep).count(str(lb)) == 1)
+# Usa una HOME temporanea: il test non deve creare directory nel profilo reale dell'utente.
+with tempfile.TemporaryDirectory(prefix="javis-terminal-home-") as home_finto:
+    vecchie_home = {k: os.environ.get(k) for k in ("HOME", "USERPROFILE")}
+    try:
+        os.environ["HOME"] = home_finto
+        os.environ["USERPROFILE"] = home_finto
+        lb = Path(home_finto) / ".local" / "bin"
+        lb.mkdir(parents=True, exist_ok=True)   # esistere e la condizione per aggiungerla
+        env = terminal._env()
+        parts = env.get("PATH", "").split(os.pathsep)
+        check("CANARY: ~/.local/bin nằm trong PATH của terminal (gõ `agy` là thấy lệnh)",
+              str(lb) in parts)
+        check("không nhân đôi ngăn đã có", parts.count(str(lb)) == 1)
+        env2 = terminal._env()
+        check("gọi lại vẫn không phình PATH",
+              env2.get("PATH", "").split(os.pathsep).count(str(lb)) == 1)
+    finally:
+        for key, value in vecchie_home.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
 
 # ---- 3. Biến JAVIS_BRAIN đi vào env của shell ----
 check("_env nhận extra (JAVIS_BRAIN...)",

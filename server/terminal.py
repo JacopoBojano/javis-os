@@ -76,9 +76,9 @@ HANG_GO_TOI_DA = 2000                  # gói chờ ghi xuống shell; đầy ng
 
 
 def bat() -> bool:
-    """Tính năng terminal có bật không. `JAVIS_TERMINAL=0` (hoặc off/false/no) là tắt hẳn."""
+    """Terminal e opt-in: si abilita solo con JAVIS_TERMINAL=1/on/true/yes."""
     v = str(os.getenv("JAVIS_TERMINAL", "")).strip().lower()
-    return v not in ("0", "off", "false", "no")
+    return v in ("1", "on", "true", "yes")
 
 
 def shell_argv() -> list[str]:
@@ -535,7 +535,12 @@ class Phien:
         # đẻ ra (npm, python...) cũng nằm trong đó. Giết mỗi shell là bỏ lại một đàn mồ côi.
         nhom = not IS_WINDOWS and self._la_nhom_truong(p)
         try:
-            if nhom:
+            if IS_WINDOWS:
+                # terminate() chi uccide la shell principale. Su Windows PowerShell/cmd puo
+                # lasciare vivi i figli; taskkill /T chiude l'albero nato da questa sessione.
+                if not winproc.kill_tree(p.pid):
+                    p.terminate()
+            elif nhom:
                 os.killpg(p.pid, signal.SIGHUP)
             else:
                 p.terminate()
@@ -545,7 +550,10 @@ class Phien:
             p.wait(timeout=3)
         except Exception:
             try:
-                if nhom:
+                if IS_WINDOWS:
+                    if not winproc.kill_tree(p.pid):
+                        p.kill()
+                elif nhom:
                     os.killpg(p.pid, signal.SIGKILL)
                 else:
                     p.kill()

@@ -460,7 +460,7 @@ GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/openai/chat/compl
 GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
 # Groq đổi tên model khá nhanh (model cũ bị deprecate rồi gỡ). Để một chỗ duy nhất, và
 # picker vẫn nạp danh sách LIVE từ /openai/v1/models nên mặc định này chỉ là lưới an toàn.
-GROQ_DEFAULT_MODEL = "llama-3.3-70b-versatile"
+GROQ_DEFAULT_MODEL = "openai/gpt-oss-20b"
 
 # Ollama - model chạy NGAY TRÊN MÁY người dùng. Khác mọi provider trên ở hai điểm, và cả hai
 # đều ăn vào cách viết mã chứ không chỉ là cấu hình:

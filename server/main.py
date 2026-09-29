@@ -280,6 +280,20 @@ async def _auth_guard(request: Request, call_next):
     return await call_next(request)
 
 
+async def _websocket_guard(ws: WebSocket) -> bool:
+    """Protegge i canali WebSocket, che non attraversano i middleware HTTP."""
+    decision = web_security.websocket_decision(
+        ws.headers.get("host", ""), ws.headers.get("origin"))
+    if decision:
+        await ws.close(code=1008, reason=decision[1])
+        return False
+    if cfgmod.gate_active() and not cfgmod.valid_session(
+            ws.cookies.get("javis_session", "")):
+        await ws.close(code=1008, reason="sessione non valida")
+        return False
+    return True
+
+
 def _bearer(request) -> str:
     raw = str(request.headers.get("authorization") or "")
     return raw[7:].strip() if raw[:7].lower() == "bearer " else ""
@@ -3364,7 +3378,7 @@ def _write_codex_profile():
     return None
 
 
-def _apply_grok_hub(cli, vault_root=None, mode="full"):
+def _apply_grok_hub(cli, vault_root=None, mode="suggest"):
     """Gắn MCP hub của Javis vào tiến trình `grok`, khoá theo đúng brain đang mở.
 
     Cùng khuôn `_apply_gemini_hub` ngay trên, và cùng lý do: Grok đọc `[mcp_servers.*]` từ
@@ -3394,7 +3408,7 @@ def _apply_grok_hub(cli, vault_root=None, mode="full"):
     return cli
 
 
-def _apply_antigravity_hub(cli, vault_root=None, mode="full"):
+def _apply_antigravity_hub(cli, vault_root=None, mode="suggest"):
     """Gắn MCP hub của Javis vào tiến trình `agy`.
 
     Header y hệt ba engine kia (`Bearer hub_token` + X-Javis-Mode + X-Javis-Vault) nên hub áp
@@ -3428,7 +3442,7 @@ def _apply_antigravity_hub(cli, vault_root=None, mode="full"):
     return cli
 
 
-def _apply_codex_hub(cli, vault_root=None):
+def _apply_codex_hub(cli, vault_root=None, mode="suggest"):
     """Gắn profile MCP và brain hiện tại vào riêng tiến trình Codex."""
     cli.profile = _write_codex_profile()
     # Ảnh Codex tự vẽ về đúng brain, kể cả phiên trang Coding đang chạy trong repo (anh_codex).
@@ -3437,6 +3451,7 @@ def _apply_codex_hub(cli, vault_root=None):
         # THAY override brain cũ chứ không nối thêm: engine Telegram giữ một CodexCLI qua nhiều
         # lượt, và nối thêm thì đổi brain qua lại để Codex dùng giá trị brain đứng sau.
         mcp_hub.dat_codex_vault(cli.extra_config, vault_root)
+        mcp_hub.dat_codex_mode(cli.extra_config, mode)
     return cli
 
 
@@ -3461,11 +3476,18 @@ def _apply_mcp(cli, mode="full", brain=None):
             cli.mcp_strict = (mode != "full"
                               and bool(cfgmod.read_settings().get("mcp", {}).get("strict"))
                               and cli.mcp_config is not None)
+            if mode != "full":
+                cli.allowed_tools = list(mcp_hub.allow_patterns())
+                cli.disallowed_tools = ["Bash", "WebFetch", "WebSearch", "Task"]
         else:
             cli.mcp_config = mcp_store.config_path()
             cli.mcp_strict = bool(cfgmod.read_settings().get("mcp", {}).get("strict")) and cli.mcp_config is not None
             dis = mcp_store.disallowed_tools()
             cli.disallowed_tools = dis or None
+            if mode != "full":
+                cli.allowed_tools = (READONLY_TOOLS if mode == "suggest" else SAFE_FILE_TOOLS)
+                cli.disallowed_tools = list(set((cli.disallowed_tools or [])
+                                                 + ["Bash", "WebFetch", "WebSearch", "Task"]))
     except Exception as e:
         print(f"[mcp apply] {e}", file=__import__('sys').stderr)
     return cli
@@ -5150,10 +5172,7 @@ def _khoi_coding(row) -> str:
 
 
 def _muc_quyen_luot_chat(row, user_message="") -> str:
-    """Mức quyền của lượt: phiên coding lấy theo chip trên trang, còn lại giữ `full` như cũ.
-
-    Khung chat thường xưa nay chạy `full` (mặc định của `_apply_mcp`); đổi mặc định đó ở đây
-    là âm thầm siết mọi cuộc trò chuyện đang có.
+    """Mức quyền của lượt: coding lấy theo chip, chat thường fail-closed ở `suggest`.
 
     Ngoại lệ DUY NHẤT theo từng lượt: tin mở đầu bằng khối `/plan` thì lượt đó chỉ được đọc và
     đề xuất (`suggest`), hub chặn mọi hành động ra ngoài. `suggest` là mức chặt nhất trong ba mức
@@ -5167,7 +5186,7 @@ def _muc_quyen_luot_chat(row, user_message="") -> str:
             return coding_store.muc_quyen_cua_phien(sid)
     except Exception:
         pass
-    return "full"
+    return "suggest"
 
 
 def _brain_key(brain) -> str:
@@ -6349,10 +6368,8 @@ def _files_ceiling(brain: str) -> Path:
             cand = Path(env).expanduser()
             if cand.is_dir():
                 ceil = cand.resolve()
-    elif not cfgmod.require_login():
-        ceil = Path(broot.anchor or broot)      # localhost = chủ máy → tới ổ đĩa
     if ceil is None:
-        ceil = broot                            # public / cấu hình lạ → khoá brain
+        ceil = broot                            # default fail-closed: solo brain
     try:
         broot.relative_to(ceil)                 # brain phải trong trần, else fallback brain
     except ValueError:
@@ -12276,8 +12293,7 @@ async def voice_live_ws(ws: WebSocket, session_id: str = Query(""), brain: str =
     Khung JSON về trình duyệt: ready | interrupted | transcript | tool | turn_done | error.
     Khung JSON từ trình duyệt: {"type":"text","text":...} | {"type":"stop"}. Byte = audio.
     """
-    if cfgmod.gate_active() and not cfgmod.valid_session(ws.cookies.get("javis_session", "")):
-        await ws.close(code=1008)
+    if not await _websocket_guard(ws):
         return
     await ws.accept()
 
@@ -12647,8 +12663,7 @@ def _bao_lan_nhanh_bo_qua(vconf) -> bool:
 # ============================================
 @app.websocket("/ws")
 async def websocket_endpoint(ws: WebSocket):
-    if cfgmod.gate_active() and not cfgmod.valid_session(ws.cookies.get("javis_session", "")):
-        await ws.close(code=1008)
+    if not await _websocket_guard(ws):
         return
     await ws.accept()
     # WebSocket chỉ là subscriber. Job chat sống trong _CHAT_RUNTIME nên đóng/F5 tab
@@ -12950,10 +12965,11 @@ async def websocket_endpoint(ws: WebSocket):
                     "grok-cli", actual_model or "", kind)
                 kcli = grok_cli.GrokCLI(cwd=_cwd_luot_chat(_row0, brain), model=actual_model,
                                         tag=turn_tag, instructions=sysprompt)
-                kcli.mode = _muc_quyen_luot_chat(_row0, user_message)
+                _turn_mode = _muc_quyen_luot_chat(_row0, user_message)
+                kcli.mode = _turn_mode
                 # Hub trỏ BRAIN kể cả khi cwd là repo: MCP, cron và nhắc hẹn thuộc bộ não của
                 # người dùng, không thuộc cây mã nguồn đang mở.
-                _apply_grok_hub(kcli, _brain_root(brain))
+                _apply_grok_hub(kcli, _brain_root(brain), mode=_turn_mode)
                 if not kcli.is_available():
                     final_text = ("⚠ Chưa cài Grok Build CLI trên máy này. Cài một lần:\n\n"
                                   f"`{grok_cli.lenh_cai()}`\n\n"
@@ -13040,9 +13056,10 @@ async def websocket_endpoint(ws: WebSocket):
                     "antigravity-cli", actual_model or "", kind)
                 acli = antigravity_cli.AntigravityCLI(cwd=_cwd_luot_chat(_row0, brain), model=actual_model,
                                                       tag=turn_tag, instructions=sysprompt)
-                acli.mode = _muc_quyen_luot_chat(_row0, user_message)
+                _turn_mode = _muc_quyen_luot_chat(_row0, user_message)
+                acli.mode = _turn_mode
                 # Hub trỏ BRAIN kể cả khi cwd là repo - xem chú thích ở nhánh Grok.
-                _apply_antigravity_hub(acli, _brain_root(brain))
+                _apply_antigravity_hub(acli, _brain_root(brain), mode=_turn_mode)
                 if not acli.is_available():
                     final_text = ("⚠ Chưa cài Antigravity CLI trên máy này. Cài một lần:\n\n"
                                   f"`{antigravity_cli.lenh_cai()}`\n\n"
@@ -13108,9 +13125,11 @@ async def websocket_endpoint(ws: WebSocket):
                 # native, như nhánh workflow) + instructions=sysprompt (kèm ROUTER SKILL) → Codex
                 # dùng được skill. Mỗi hội thoại dashboard giữ riêng codex_thread_id để resume.
                 ccli = CodexCLI(cwd=_cwd_luot_chat(_row0, brain), model=actual_model, tag=turn_tag, instructions=sysprompt)
+                _turn_mode = _muc_quyen_luot_chat(_row0, user_message)
+                ccli.sandbox = claude_cli.codex_sandbox_cho_mode(_turn_mode)
                 # Hub vẫn trỏ BRAIN kể cả khi cwd là repo: MCP, cron và nhắc hẹn thuộc về bộ
                 # não của người dùng, không thuộc về cây mã nguồn đang mở.
-                _apply_codex_hub(ccli, _brain_root(brain))   # MCP + đúng brain cho cron/nhắc hẹn
+                _apply_codex_hub(ccli, _brain_root(brain), mode=_turn_mode)
                 stored_codex_thread = (_row0.get("codex_thread_id") or "").strip()
                 # Mạch Codex đã phình quá ngưỡng thì THÔI resume: mở mạch mới rồi mồi lại
                 # bằng transcript trong SQLite. Không làm bước này thì mỗi lượt tiếp theo
@@ -14650,8 +14669,7 @@ async def terminal_close(session: str = Form(...)):
 @app.websocket("/ws/terminal")
 async def terminal_ws(ws: WebSocket, session: str = Query(""), brain: str = Query("brain"),
                       cols: int = Query(80), rows: int = Query(24)):
-    if cfgmod.gate_active() and not cfgmod.valid_session(ws.cookies.get("javis_session", "")):
-        await ws.close(code=1008)
+    if not await _websocket_guard(ws):
         return
     await ws.accept()
 

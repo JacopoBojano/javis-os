@@ -1555,6 +1555,7 @@ def codex_profile(mode="full"):
 # nhận được brain, rơi về "phiên cập nhật gần nhất" của CẢ MÁY - sự cố 27/09/2026: dashboard
 # đang ở My Bullet Journal mà lệnh tạo đơn TTS chạy trên brain Ngọc Thu Phạm.
 CODEX_VAULT_KEY = "mcp_servers.javis.http_headers.X-Javis-Vault"
+CODEX_MODE_KEY = "mcp_servers.javis.http_headers.X-Javis-Mode"
 
 
 def ma_hoa_vault(vault: str) -> str:
@@ -1590,6 +1591,21 @@ def dat_codex_vault(extra_config, vault_root):
     override = codex_vault_override(vault_root)
     if override:
         extra_config.append(override)
+    return extra_config
+
+
+def dat_codex_mode(extra_config, mode):
+    """Imposta il livello di permesso per il singolo processo Codex.
+
+    Il profilo Codex e condiviso, quindi riscriverlo per ogni chat crea una race tra sessioni.
+    L'override ``-c`` appartiene invece all'invocazione e prevale sul valore del profilo.
+    """
+    extra_config[:] = [x for x in extra_config
+                       if not str(x).startswith(CODEX_MODE_KEY + "=")]
+    value = str(mode or "suggest").strip().lower()
+    if value not in ("suggest", "auto", "full"):
+        value = "suggest"
+    extra_config.append(f"{CODEX_MODE_KEY}={_toml_str(value)}")
     return extra_config
 
 

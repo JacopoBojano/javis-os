@@ -8231,14 +8231,13 @@
     });
   }
 
-  // Nạp turndown (HTML→markdown) LAZY, chỉ khi cần lưu bản WYSIWYG. + plugin GFM (bảng).
+  // Turndown deve essere un asset locale verificato. Non caricare codice da CDN nel
+  // contesto autenticato: se manca, il salvataggio WYSIWYG usa il fallback gia previsto.
   let _tdPromise = null, _td = null;
   function _ensureTurndown() {
     if (window.TurndownService) return Promise.resolve();
     if (_tdPromise) return _tdPromise;
-    const load = (src) => new Promise((res) => { const s = document.createElement("script"); s.src = src; s.onload = res; s.onerror = res; document.head.appendChild(s); });
-    _tdPromise = load("https://unpkg.com/turndown@7.2.0/dist/turndown.js")
-      .then(() => load("https://unpkg.com/turndown-plugin-gfm@1.0.2/dist/turndown-plugin-gfm.js"));
+    _tdPromise = Promise.resolve();
     return _tdPromise;
   }
   // HTML (bản render đang sửa) → markdown. GIỮ [[wikilink]] và ![[ảnh]] qua luật riêng theo data-vault-path.

@@ -1,8 +1,13 @@
 from _paths import ROOT, SERVER  # noqa: E402,F401  - nạp server/ vào sys.path (xem tests/python/_paths.py)
 import asyncio
 import json
+import os
+import tempfile
 import time
 from types import SimpleNamespace
+
+os.environ.setdefault("JAVIS_STATE_DIR", tempfile.mkdtemp(prefix="javis-disconnect-"))
+os.environ.setdefault("BRAINS_DIR", tempfile.mkdtemp(prefix="javis-disconnect-brains-"))
 
 from fastapi import WebSocketDisconnect
 
@@ -13,6 +18,7 @@ from sessions import SessionStore
 
 class _DisconnectingWebSocket:
     cookies = {}
+    headers = {"host": "localhost:7777", "origin": "http://localhost:7777"}
 
     def __init__(self, payload):
         self._payload = json.dumps(payload)

@@ -88,34 +88,20 @@ elif command -v brew >/dev/null 2>&1; then
   brew install git ripgrep ffmpeg >/dev/null 2>&1 || warn "some deps skipped"
 fi
 
-# --- 3. Node.js 22 LTS (system pkg -> nodejs.org tarball fallback) ---
+# --- 3. Node.js 20+ (nessun bootstrap remoto eseguito alla cieca) ---
 need_node() { ! command -v node >/dev/null 2>&1 || [ "$(node -v | sed 's/v//;s/\..*//')" -lt 20 ]; }
 if need_node; then
-  log "Installing Node.js 22 LTS..."
-  if command -v apt-get >/dev/null 2>&1; then
-    curl -fsSL https://deb.nodesource.com/setup_22.x | $SUDO -E bash - >/dev/null 2>&1 && $SUDO apt-get install -y nodejs || true
-  elif command -v brew >/dev/null 2>&1; then brew install node@22 || true; fi
-  if need_node; then
-    arch=$(uname -m); case "$arch" in x86_64) na=x64;; aarch64|arm64) na=arm64;; *) err "unsupported arch $arch"; exit 1;; esac
-    tb=$(curl -fsSL https://nodejs.org/dist/latest-v22.x/ | grep -oE "node-v22\.[0-9]+\.[0-9]+-linux-${na}\.tar\.xz" | head -1)
-    tmp=$(mktemp -d); curl -fsSL "https://nodejs.org/dist/latest-v22.x/${tb}" -o "$tmp/n.tar.xz"
-    mkdir -p "$HOME/.javis"; rm -rf "$HOME/.javis/node"
-    tar xf "$tmp/n.tar.xz" -C "$tmp"; mv "$tmp"/node-v22* "$HOME/.javis/node"; rm -rf "$tmp"
-    mkdir -p "$HOME/.local/bin"
-    ln -sf "$HOME/.javis/node/bin/node" "$HOME/.local/bin/node"
-    ln -sf "$HOME/.javis/node/bin/npm"  "$HOME/.local/bin/npm"
-    ln -sf "$HOME/.javis/node/bin/npx"  "$HOME/.local/bin/npx"
-    export PATH="$HOME/.local/bin:$PATH"
-  fi
+  err "Node.js 20+ manca. Installalo dal package manager di sistema o da un pacchetto verificato, poi rilancia."
+  exit 1
 fi
 ok "Node $(node -v)"
 
 # --- 4. Claude Code CLI (the brain) ---
 if ! command -v claude >/dev/null 2>&1; then
   log "Installing Claude Code CLI globally via npm..."
-  if ! npm install -g @anthropic-ai/claude-code >/dev/null 2>&1; then
+  if ! npm install -g @anthropic-ai/claude-code@2.1.284 >/dev/null 2>&1; then
     warn "global npm install needs sudo; retrying..."
-    $SUDO npm install -g @anthropic-ai/claude-code
+    $SUDO npm install -g @anthropic-ai/claude-code@2.1.284
   fi
 fi
 ok "Claude CLI $(claude --version 2>/dev/null || echo installed)"
@@ -140,7 +126,7 @@ cai_them_cli() {   # <gói npm> <tên binary> <tên hiển thị>
   fi
 }
 # Engine Gemini CLI đã GỠ HẲN ở 0.50.0 (Google ngắt mọi tài khoản cá nhân từ 18/06/2026).
-cai_them_cli @openai/codex@latest codex "Codex CLI"
+cai_them_cli @openai/codex@0.158.0 codex "Codex CLI"
 
 # --- 4c. agy (Antigravity CLI, đường Google) + grok (Grok Build, đường xAI) ---
 #
@@ -152,17 +138,9 @@ cai_them_cli @openai/codex@latest codex "Codex CLI"
 # BEST-EFFORT tuyệt đối: chạy script của nhà thứ ba nên hỏng là chuyện bình thường (mạng, máy
 # lạ, nhà cung cấp đổi URL) - hỏng thì nói một dòng rồi đi tiếp, không được giết lần cài.
 # ĐĂNG NHẬP thì vẫn là việc của người dùng, làm ở trang Models sau khi Javis chạy.
-cai_cli_script() {   # <tên binary> <tên hiển thị> <URL script cài>
+cai_cli_script() {   # <tên binary> <tên hiển thị> <URL documentazione>
   if command -v "$1" >/dev/null 2>&1; then ok "$2 da co san"; return 0; fi
-  log "Installing $2 (best-effort, script cua nha cung cap)..."
-  if curl -fsSL "$3" | bash >/dev/null 2>&1; then
-    export PATH="$HOME/.local/bin:$PATH"
-    if command -v "$1" >/dev/null 2>&1; then ok "$2"; else
-      warn "$2: script chay xong nhung chua thay binary '$1'. Mo terminal moi roi thu lai: curl -fsSL $3 | bash"
-    fi
-  else
-    warn "Chua cai duoc $2 - engine do se khong hien o trang Models. Cai tay: curl -fsSL $3 | bash"
-  fi
+  warn "$2: bo qua cai tu dong. Verifica versione e hash dalla fonte ufficiale prima di installare."
 }
 cai_cli_script agy "Antigravity CLI (Google)" https://antigravity.google/cli/install.sh
 cai_cli_script grok "Grok Build (xAI)" https://x.ai/cli/install.sh
@@ -257,7 +235,7 @@ else
       warn "  Hai lần nhập không khớp, thử lại."
     done
   else
-    # Chạy không có bàn phím (curl | bash, CI, script khác gọi vào). Tự sinh chứ KHÔNG bỏ trống:
+    # Chạy không có bàn phím (CI hoặc script khác gọi vào). Tự sinh chứ KHÔNG bỏ trống:
     # bỏ trống là đẩy người dùng về đúng cái màn đọc-log mà bước này sinh ra để xoá đi.
     ADMIN_PW="$(_gen_pw)"; ADMIN_PW_SINH="$ADMIN_PW"
   fi
