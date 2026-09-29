@@ -6,7 +6,9 @@ Lịch sử phiên bản Javis OS. Bản mới nhất ở trên cùng. Xem ngay 
 
 ## [0.64.78] - 2026-09-29
 ### Sửa lỗi
-- (đang viết)
+- **Model Claude mới (như Sonnet 5.5, Opus 5.5) giờ tự hiện trong Javis.** Trước đây Claude Code trên máy không tự lên bản mới khi chỉ được Javis gọi chạy ngầm, nên danh sách model đứng yên hàng tháng trời.
+- Javis nay tự cập nhật Claude Code mỗi ngày một lần. Thẻ Claude Code trên trang **Models** ghi đang ở bản nào, lần cuối xét khi nào, kèm nút **Cập nhật Claude Code** để chạy ngay và báo model nào vừa có thêm.
+- **Bản Docker/VPS** nhận Claude Code mới nhất theo mỗi bản cập nhật Javis. Trước đây ảnh Docker vô tình giữ mãi một bản Claude Code cũ.
 
 ## [0.64.77] - 2026-09-28
 ### Sửa lỗi
