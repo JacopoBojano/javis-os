@@ -4,6 +4,10 @@ Lịch sử phiên bản Javis OS. Bản mới nhất ở trên cùng. Xem ngay 
 
 Định dạng: mỗi phiên bản là một khối `## [x.y.z] - ngày`, bên dưới nhóm thay đổi theo `### Thêm mới / Sửa lỗi / Cải thiện / Bảo mật`.
 
+## [0.64.81] - 2026-09-29
+### Thêm mới
+- **Gõ `/` trong khung chat có thêm lệnh hệ thống** (đang hoàn thiện).
+
 ## [0.64.80] - 2026-09-29
 ### Thêm mới
 - **Bot tự trả lời trên Zalo cá nhân.** Nối Zalo ở trang Kết nối, rồi bấm Tạo bot trực (hoặc Bot mới và chọn kênh Zalo cá nhân). Bot tự quyết có nên trả lời hay không, chuyện riêng tư hay tin không cần hồi đáp thì nó im. Không cần bật công tắc từng người.
